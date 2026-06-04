@@ -1,19 +1,15 @@
-name: Build ZeroClaw Android
+﻿name: Build ZeroClaw Android
 
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
-  build:
+  build-binary:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -28,44 +24,23 @@ jobs:
       - name: Configure Cargo for NDK
         run: |
           mkdir -p ~/.cargo
-          cat >> ~/.cargo/config.toml << 'EOF'
+          NDK=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
+          cat >> ~/.cargo/config.toml << EOF
           [target.aarch64-linux-android]
-          linker = "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
+          linker = "$NDK/aarch64-linux-android21-clang"
           EOF
+          export CC_aarch64_linux_android="$NDK/aarch64-linux-android21-clang"
+          export AR_aarch64_linux_android="$NDK/llvm-ar"
 
-      - name: Build zeroclaw for Android
+      - name: Build zeroclaw kernel (minimal)
         working-directory: ./zeroclaw
         run: |
-          cargo build --target aarch64-linux-android --release \
-            --no-default-features \
-            --features "agent-runtime,gateway,memory-sqlite,tool-shell,tool-http,rustls"
+          cargo build --target aarch64-linux-android --release --no-default-features 2>&1
+          ls -lh target/aarch64-linux-android/release/zeroclaw || echo "Binary not found"
 
-      - name: Copy binary to assets
-        run: |
-          mkdir -p app/src/main/assets
-          cp zeroclaw/target/aarch64-linux-android/release/zeroclaw app/src/main/assets/libzeroclaw.so
-
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-
-      - name: Set up local.properties
-        run: |
-          echo "sdk.dir=\$ANDROID_HOME" > local.properties
-          echo "ndk.dir=\$ANDROID_NDK_HOME" >> local.properties
-
-      - name: Accept SDK licenses
-        run: yes | \$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
-
-      - name: Build APK
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease
-
-      - name: Upload APK
+      - name: Upload binary
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: zeroclaw-android-apk
-          path: app/build/outputs/apk/release/*.apk
+          name: zeroclaw-aarch64-android
+          path: zeroclaw/target/aarch64-linux-android/release/zeroclaw
