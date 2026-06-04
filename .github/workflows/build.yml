@@ -18,25 +18,28 @@ jobs:
 
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
+        id: setup-ndk
         with:
           ndk-version: r27
 
       - name: Configure Cargo for NDK
         run: |
+          NDK="${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
           mkdir -p ~/.cargo
-          NDK=$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin
-          cat >> ~/.cargo/config.toml << EOF
+          cat > ~/.cargo/config.toml << EOF
           [target.aarch64-linux-android]
-          linker = "$NDK/aarch64-linux-android21-clang"
+          linker = "${NDK}/aarch64-linux-android21-clang"
           EOF
-          export CC_aarch64_linux_android="$NDK/aarch64-linux-android21-clang"
-          export AR_aarch64_linux_android="$NDK/llvm-ar"
 
       - name: Build zeroclaw kernel (minimal)
         working-directory: ./zeroclaw
+        env:
+          CC_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
+          AR_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
         run: |
           cargo build --target aarch64-linux-android --release --no-default-features 2>&1
-          ls -lh target/aarch64-linux-android/release/zeroclaw || echo "Binary not found"
+          ls -lh target/aarch64-linux-android/release/zeroclaw || echo "No binary"
 
       - name: Upload binary
         if: success()
