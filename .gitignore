@@ -1,0 +1,23 @@
+# Gradle
+.gradle/
+build/
+app/build/
+local.properties
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# Rust build artifacts
+target/
+**/target/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CI local test artifacts
+*.log

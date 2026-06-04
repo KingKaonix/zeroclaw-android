@@ -1,0 +1,2 @@
+-keep class com.kaonixx.zeroclaw.** { *; }
+-dontwarn com.kaonixx.zeroclaw.**
