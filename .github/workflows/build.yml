@@ -51,6 +51,14 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Set up local.properties
+        run: |
+          echo "sdk.dir=\$ANDROID_HOME" > local.properties
+          echo "ndk.dir=\$ANDROID_NDK_HOME" >> local.properties
+
+      - name: Accept SDK licenses
+        run: yes | \$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
+
       - name: Build APK
         run: |
           chmod +x gradlew
