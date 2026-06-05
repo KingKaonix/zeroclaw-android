@@ -1,6 +1,9 @@
 package com.kaonixx.zeroclaw
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.Menu
 import android.view.MenuItem
@@ -9,53 +12,77 @@ import android.webkit.WebViewClient
 import android.webkit.WebChromeClient
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webView: WebView
+    private val NOTIF_PERM_CODE = 100
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        startService(Intent(this, ZeroClawService::class.java))
+        try {
+            webView = WebView(this)
+            webView.settings.apply {
+                javaScriptEnabled = true
+                domStorageEnabled = true
+                allowFileAccess = false
+                allowContentAccess = false
+                setSupportZoom(true)
+                builtInZoomControls = true
+                displayZoomControls = false
+                loadWithOverviewMode = true
+                useWideViewPort = true
+                userAgentString = "ZeroClaw-Android/1.0"
+            }
 
-        webView = WebView(this)
-        webView.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            allowFileAccess = false
-            allowContentAccess = false
-            setSupportZoom(true)
-            builtInZoomControls = true
-            displayZoomControls = false
-            loadWithOverviewMode = true
-            useWideViewPort = true
-            userAgentString = "ZeroClaw-Android/1.0"
-        }
-
-        webView.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView?, url: String?) {
-                super.onPageFinished(view, url)
-                if (url != null && url.startsWith("http") && !LicenseValidator.isPro(this@MainActivity)) {
-                    view?.evaluateJavascript("""
-                        (function() {
-                            var wm = document.createElement('div');
-                            wm.id = 'zc-watermark';
-                            wm.style.cssText = 'position:fixed;bottom:8px;right:12px;z-index:9999;color:rgba(255,255,255,0.15);font-size:11px;font-family:monospace;pointer-events:none;';
-                            wm.textContent = 'ZeroClaw · UNLICENSED';
-                            document.body.appendChild(wm);
-                        })();
-                    """.trimIndent(), null)
+            webView.webViewClient = object : WebViewClient() {
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    if (url != null && url.startsWith("http") && !LicenseValidator.isPro(this@MainActivity)) {
+                        view?.evaluateJavascript("""
+                            (function() {
+                                var wm = document.createElement('div');
+                                wm.id = 'zc-watermark';
+                                wm.style.cssText = 'position:fixed;bottom:8px;right:12px;z-index:9999;color:rgba(255,255,255,0.15);font-size:11px;font-family:monospace;pointer-events:none;';
+                                wm.textContent = 'ZeroClaw · UNLICENSED';
+                                document.body.appendChild(wm);
+                            })();
+                        """.trimIndent(), null)
+                    }
+                }
+                override fun onReceivedError(view: WebView?, errorCode: Int, description: String?, failingUrl: String?) {
+                    view?.loadData("<html><body style='color:#eee;background:#111;padding:40px;font-family:sans-serif'><h2>Connection Error</h2><p>$description</p></body></html>", "text/html", "utf-8")
                 }
             }
-            override fun onReceivedError(view: WebView?, errorCode: Int, description: String?, failingUrl: String?) {
-                view?.loadData("<html><body style='color:#eee;background:#111;padding:40px;font-family:sans-serif'><h2>Connection Error</h2><p>$description</p></body></html>", "text/html", "utf-8")
+
+            webView.webChromeClient = WebChromeClient()
+            setContentView(webView)
+        } catch (e: Exception) {
+            val tv = android.widget.TextView(this).apply {
+                text = "Error: ${e.message}\n\nTry reinstalling or check device logs."
+                setTextColor(android.graphics.Color.WHITE)
+                setBackgroundColor(android.graphics.Color.parseColor("#111"))
+                textSize = 14f
+                setPadding(40, 40, 40, 40)
             }
+            setContentView(tv)
+            return
         }
 
-        webView.webChromeClient = WebChromeClient()
-        setContentView(webView)
+        requestNotificationPermission()
+        startService(Intent(this, ZeroClawService::class.java))
         retryLoadGateway()
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), NOTIF_PERM_CODE)
+            }
+        }
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {

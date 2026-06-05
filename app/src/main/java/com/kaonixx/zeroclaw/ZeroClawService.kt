@@ -28,8 +28,12 @@ class ZeroClawService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notification = buildNotification()
-        startForeground(NOTIFICATION_ID, notification)
+        try {
+            val notification = buildNotification()
+            startForeground(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            Log.w(TAG, "Foreground service start failed: ${e.message}")
+        }
         startAgent()
         updateNotificationPeriodically()
         return START_STICKY

@@ -29,7 +29,7 @@
         <service
             android:name=".ZeroClawService"
             android:exported="false"
-            android:foregroundServiceType="specialUse"
+            android:foregroundServiceType="dataSync"
             android:process=":zeroclaw" />
 
         <receiver
