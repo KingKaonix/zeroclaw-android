@@ -129,7 +129,7 @@ class ZeroClawService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Failed to extract binary", e)
             // Check alternative paths
-            val alt = File(applicationInfo.nativeLibDir, "libzeroclaw.so")
+            val alt = File(applicationContext.applicationInfo.nativeLibDir, "libzeroclaw.so")
             if (alt.exists()) return alt
             return null
         }
