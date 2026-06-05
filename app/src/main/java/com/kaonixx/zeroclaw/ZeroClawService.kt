@@ -119,20 +119,16 @@ class ZeroClawService : Service() {
         val dest = File(filesDir, "libzeroclaw.so")
         if (dest.exists() && dest.length() > 0) return dest
 
-        try {
+        return try {
             applicationContext.assets.open("libzeroclaw.so").use { input ->
                 dest.outputStream().use { output ->
                     input.copyTo(output)
                 }
             }
-            return dest
+            dest
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to extract binary", e)
-            // Check alternative paths
-            val ai = applicationContext.packageManager.getApplicationInfo(applicationContext.packageName, 0)
-            val alt = File(ai.nativeLibDir, "libzeroclaw.so")
-            if (alt.exists()) return alt
-            return null
+            Log.e(TAG, "Failed to extract binary from assets", e)
+            null
         }
     }
 
