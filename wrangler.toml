@@ -1,0 +1,11 @@
+﻿name = "zeroclaw-license"
+main = "scripts/license-worker.js"
+compatibility_date = "2025-06-01"
+
+[vars]
+ADMIN_KEY = "change-me-in-dashboard"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "zeroclaw-licenses"
+database_id = ""
