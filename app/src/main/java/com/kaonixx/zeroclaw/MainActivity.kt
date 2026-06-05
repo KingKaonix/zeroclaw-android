@@ -36,7 +36,7 @@ class MainActivity : AppCompatActivity() {
         webView.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                if (!LicenseValidator.isPro(this@MainActivity)) {
+                if (url != null && url.startsWith("http") && !LicenseValidator.isPro(this@MainActivity)) {
                     view?.evaluateJavascript("""
                         (function() {
                             var wm = document.createElement('div');
@@ -47,6 +47,9 @@ class MainActivity : AppCompatActivity() {
                         })();
                     """.trimIndent(), null)
                 }
+            }
+            override fun onReceivedError(view: WebView?, errorCode: Int, description: String?, failingUrl: String?) {
+                view?.loadData("<html><body style='color:#eee;background:#111;padding:40px;font-family:sans-serif'><h2>Connection Error</h2><p>$description</p></body></html>", "text/html", "utf-8")
             }
         }
 
