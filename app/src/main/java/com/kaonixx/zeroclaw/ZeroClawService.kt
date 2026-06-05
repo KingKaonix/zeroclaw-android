@@ -31,6 +31,7 @@ class ZeroClawService : Service() {
         val notification = buildNotification()
         startForeground(NOTIFICATION_ID, notification)
         startAgent()
+        updateNotificationPeriodically()
         return START_STICKY
     }
 
@@ -54,8 +55,10 @@ class ZeroClawService : Service() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+        val isPro = LicenseValidator.isPro(this)
+        val tier = if (isPro) "Pro" else "Free"
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("ZeroClaw")
+            .setContentTitle("ZeroClaw $tier")
             .setContentText("Agent running")
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentIntent(pendingIntent)
@@ -175,6 +178,19 @@ path = "${filesDir.absolutePath.replace("\\", "/")}/.zeroclaw/memory.db"
         super.onDestroy()
         process?.destroy()
         process?.waitFor()
+    }
+
+    private fun updateNotificationPeriodically() {
+        executor.execute {
+            while (process?.isAlive == true) {
+                try {
+                    val notification = buildNotification()
+                    val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    manager.notify(NOTIFICATION_ID, notification)
+                } catch (_: Exception) {}
+                Thread.sleep(60_000L) // update every minute
+            }
+        }
     }
 
     override fun onBind(intent: Intent?) = null
