@@ -4,14 +4,13 @@ import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.os.Build
-import android.os.Process
 import android.util.Log
 import java.io.File
 import java.util.concurrent.Executors
 
 class ZeroClawService : Service() {
 
-    private var process: Process? = null
+    private var process: java.lang.Process? = null
     private val executor = Executors.newSingleThreadExecutor()
     private val CONFIG_DIR = ".zeroclaw"
     private val GATEWAY_PORT = 18789
@@ -96,7 +95,7 @@ class ZeroClawService : Service() {
 
                 process = pb.start()
 
-                Log.i(TAG, "Agent started. PID: ${process?.pid()}")
+                Log.i(TAG, "Agent started.")
                 Log.i(TAG, "Gateway: http://127.0.0.1:$GATEWAY_PORT")
 
                 // Read stdout in background
