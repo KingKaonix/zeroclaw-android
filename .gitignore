@@ -21,3 +21,4 @@ Thumbs.db
 
 # CI local test artifacts
 *.log
+apk/
