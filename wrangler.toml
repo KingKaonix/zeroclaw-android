@@ -1,9 +1,17 @@
-﻿name = "zeroclaw-license"
+name = "zeroclaw-license"
 main = "scripts/license-worker.js"
 compatibility_date = "2025-06-01"
 
 [vars]
 ADMIN_KEY = "change-me-in-dashboard"
+LEMONSQUEEZY_STORE_ID = ""
+LEMONSQUEEZY_PRO_VARIANT_ID = ""
+LEMONSQUEEZY_ENT_VARIANT_ID = ""
+
+# Set via: npx wrangler secret put LEMONSQUEEZY_API_KEY
+# Set via: npx wrangler secret put LEMONSQUEEZY_WEBHOOK_SECRET
+# Set via: npx wrangler secret put ZEROCLAW_PRIVATE_KEY
+# Set via: npx wrangler secret put ZEROCLAW_PUBLIC_KEY
 
 [[d1_databases]]
 binding = "DB"
