@@ -1,0 +1,74 @@
+name: Release ZeroClaw Android
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r27
+      - name: Configure Cargo
+        run: |
+          NDK="${{ steps.ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          mkdir -p ~/.cargo
+          cat > ~/.cargo/config.toml <<EOF
+          [target.aarch64-linux-android]
+          linker = "${NDK}/aarch64-linux-android21-clang"
+          rustflags = ["-C", "link-arg=-ldl"]
+          EOF
+      - name: Build zeroclaw
+        working-directory: ./zeroclaw
+        env:
+          PKG_CONFIG_ALLOW_CROSS: 1
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ steps.ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
+        run: cargo build --target aarch64-linux-android --release --features "rustls"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: |
+          mkdir -p app/src/main/assets
+          cp zeroclaw/target/aarch64-linux-android/release/zeroclaw app/src/main/assets/libzeroclaw.so
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.5
+      - run: ./gradlew assembleRelease --no-daemon
+      - name: Sign APK
+        id: sign
+        run: |
+          if [ -n "${{ secrets.ZEROCLAW_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.ZEROCLAW_KEYSTORE_BASE64 }}" | base64 -d > ks.jks
+            $ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks ks.jks \
+              --ks-pass pass:${{ secrets.ZEROCLAW_KEYSTORE_PASSWORD }} \
+              --key-pass pass:${{ secrets.ZEROCLAW_KEY_PASSWORD }} \
+              --ks-key-alias ${{ secrets.ZEROCLAW_KEY_ALIAS }} \
+              --out zeroclaw-signed.apk \
+              app/build/outputs/apk/release/zeroclaw-release-unsigned.apk
+            echo "apk=zeroclaw-signed.apk" >> $GITHUB_OUTPUT
+          else
+            echo "apk=app/build/outputs/apk/release/zeroclaw-release-unsigned.apk" >> $GITHUB_OUTPUT
+          fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.sign.outputs.apk }}
+            zeroclaw/target/aarch64-linux-android/release/zeroclaw
+          generate_release_notes: true
+          body: |
+            ## Install
+            ```bash
+            adb install -r zeroclaw-signed.apk
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
