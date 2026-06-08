@@ -12,9 +12,10 @@
     <application
         android:allowBackup="true"
         android:label="ZeroClaw"
+        android:icon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.AppCompat.NoActionBar">
+        android:theme="@style/Theme.ZeroClaw">
 
         <activity
             android:name=".MainActivity"
@@ -37,6 +38,7 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

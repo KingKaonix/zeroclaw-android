@@ -3,15 +3,19 @@ package com.kaonixx.zeroclaw
 import android.app.*
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
 import android.os.Build
 import android.util.Log
 import java.io.File
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 
 class ZeroClawService : Service() {
 
     private var process: java.lang.Process? = null
-    private val executor = Executors.newSingleThreadExecutor()
+    private val agentExecutor = Executors.newSingleThreadExecutor()
+    private var notificationScheduler: ScheduledExecutorService? = null
     private val CONFIG_DIR = ".zeroclaw"
     private val GATEWAY_PORT = 18789
 
@@ -35,7 +39,7 @@ class ZeroClawService : Service() {
             Log.w(TAG, "Foreground service start failed: ${e.message}")
         }
         startAgent()
-        updateNotificationPeriodically()
+        startNotificationUpdater()
         return START_STICKY
     }
 
@@ -61,17 +65,23 @@ class ZeroClawService : Service() {
         )
         val isPro = LicenseValidator.isPro(this)
         val tier = if (isPro) "Pro" else "Free"
-        return Notification.Builder(this, CHANNEL_ID)
+        val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+        return builder
             .setContentTitle("ZeroClaw $tier")
-            .setContentText("Agent running")
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentText("Agent running on :$GATEWAY_PORT")
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
             .build()
     }
 
     private fun startAgent() {
-        executor.execute {
+        agentExecutor.execute {
             try {
                 val binary = extractBinary()
                 if (binary == null) {
@@ -97,6 +107,7 @@ class ZeroClawService : Service() {
                     "--gateway", "127.0.0.1:$GATEWAY_PORT"
                 )
                 pb.directory(configDir)
+                pb.redirectErrorStream(true)
                 pb.environment()["HOME"] = filesDir.absolutePath
                 pb.environment()["RUST_LOG"] = "info"
 
@@ -105,14 +116,13 @@ class ZeroClawService : Service() {
                 Log.i(TAG, "Agent started.")
                 Log.i(TAG, "Gateway: http://127.0.0.1:$GATEWAY_PORT")
 
-                // Read stdout in background
+                // Read stdout/stderr in background
                 process?.inputStream?.bufferedReader()?.use { reader ->
                     reader.lines().forEach { line ->
                         Log.d(TAG, "[agent] $line")
                     }
                 }
 
-                // Wait for process
                 val exitCode = process?.waitFor()
                 Log.w(TAG, "Agent exited with code: $exitCode")
 
@@ -124,7 +134,15 @@ class ZeroClawService : Service() {
 
     private fun extractBinary(): File? {
         val dest = File(filesDir, "libzeroclaw.so")
-        if (dest.exists() && dest.length() > 0) return dest
+
+        // Check if we need to re-extract (first run, or after app update)
+        val versionFile = File(filesDir, "libzeroclaw.version")
+        val currentVersion = getAppVersionCode().toString()
+        val storedVersion = if (versionFile.exists()) versionFile.readText().trim() else ""
+
+        if (dest.exists() && dest.length() > 0 && storedVersion == currentVersion) {
+            return dest
+        }
 
         return try {
             applicationContext.assets.open("libzeroclaw.so").use { input ->
@@ -132,6 +150,7 @@ class ZeroClawService : Service() {
                     input.copyTo(output)
                 }
             }
+            versionFile.writeText(currentVersion)
             dest
         } catch (e: Exception) {
             Log.e(TAG, "Failed to extract binary from assets", e)
@@ -139,7 +158,22 @@ class ZeroClawService : Service() {
         }
     }
 
+    private fun getAppVersionCode(): Long {
+        return try {
+            val info: PackageInfo = packageManager.getPackageInfo(packageName, 0)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                info.longVersionCode
+            } else {
+                @Suppress("DEPRECATION")
+                info.versionCode.toLong()
+            }
+        } catch (e: Exception) {
+            1L
+        }
+    }
+
     private fun generateDefaultConfig(): String {
+        val dataPath = filesDir.absolutePath
         return """
 # ZeroClaw Android - Default Config
 # Edit this file to configure your agent.
@@ -158,15 +192,12 @@ port = $GATEWAY_PORT
 
 [workspace]
 # Sandboxed to app data directory
-root = "${filesDir.absolutePath.replace("\\", "/")}/workspace"
-allowed_paths = ["${filesDir.absolutePath.replace("\\", "/")}"]
+root = "$dataPath/workspace"
+allowed_paths = ["$dataPath"]
 
 [mcp]
-# Enable MCP for tool integration
 enabled = true
 
-[tools]
-# Sandboxed shell execution
 [security]
 supervised = true
 allow_shell = false
@@ -174,27 +205,26 @@ allow_filesystem = true
 
 [memory]
 backend = "sqlite"
-path = "${filesDir.absolutePath.replace("\\", "/")}/.zeroclaw/memory.db"
+path = "$dataPath/.zeroclaw/memory.db"
         """.trimIndent()
+    }
+
+    private fun startNotificationUpdater() {
+        notificationScheduler = Executors.newSingleThreadScheduledExecutor()
+        notificationScheduler?.scheduleAtFixedRate({
+            try {
+                val notification = buildNotification()
+                val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                manager.notify(NOTIFICATION_ID, notification)
+            } catch (_: Exception) {}
+        }, 60L, 60L, TimeUnit.SECONDS)
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        notificationScheduler?.shutdown()
         process?.destroy()
         process?.waitFor()
-    }
-
-    private fun updateNotificationPeriodically() {
-        executor.execute {
-            while (process?.isAlive == true) {
-                try {
-                    val notification = buildNotification()
-                    val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                    manager.notify(NOTIFICATION_ID, notification)
-                } catch (_: Exception) {}
-                Thread.sleep(60_000L) // update every minute
-            }
-        }
     }
 
     override fun onBind(intent: Intent?) = null

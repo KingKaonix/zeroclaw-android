@@ -160,7 +160,7 @@ export default {
         if (url.searchParams.get("auth") !== env.ADMIN_KEY) return json({ error: "unauthorized" }, 403, cors);
         if (!env.DB) return json({ error: "no DB" }, 500, cors);
         const pro = await env.DB.prepare("SELECT COUNT(*) as c FROM licenses WHERE tier='pro'").first();
-        const ent = await env.prepare("SELECT COUNT(*) as c FROM licenses WHERE tier='enterprise'").first();
+        const ent = await env.DB.prepare("SELECT COUNT(*) as c FROM licenses WHERE tier='enterprise'").first();
         const total = await env.DB.prepare("SELECT COUNT(*) as c FROM licenses").first();
         return json({ pro: pro?.c || 0, enterprise: ent?.c || 0, total: total?.c || 0, mrr: ((pro?.c || 0) * 8 + (ent?.c || 0) * 20) }, 200, cors);
       }

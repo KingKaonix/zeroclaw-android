@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -29,14 +31,16 @@ jobs:
           cat > ~/.cargo/config.toml << EOF
           [target.aarch64-linux-android]
           linker = "${NDK}/aarch64-linux-android21-clang"
+          rustflags = ["-C", "link-arg=-ldl"]
           EOF
 
-      - name: Build zeroclaw kernel (minimal)
+      - name: Build zeroclaw (minimal, no-default-features for CI speed)
         working-directory: ./zeroclaw
         env:
           CC_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
           AR_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
           CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
+          PKG_CONFIG_ALLOW_CROSS: "1"
         run: |
           cargo build --target aarch64-linux-android --release --no-default-features 2>&1
 
@@ -48,7 +52,6 @@ jobs:
           path: zeroclaw/target/aarch64-linux-android/release/zeroclaw
 
   build-apk:
-    if: success()
     needs: build-binary
     runs-on: ubuntu-latest
     steps:
@@ -71,7 +74,7 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Setup Gradle + generate wrapper
+      - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.5
@@ -79,8 +82,8 @@ jobs:
       - name: Accept SDK licenses
         run: yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1 || true
 
-      - name: Build APK
-        run: gradle wrapper && ./gradlew assembleDebug
+      - name: Build debug APK
+        run: gradle wrapper --gradle-version 8.5 && ./gradlew assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

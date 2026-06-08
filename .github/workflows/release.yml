@@ -32,7 +32,7 @@ jobs:
         env:
           PKG_CONFIG_ALLOW_CROSS: 1
           CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ steps.ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
-        run: cargo build --target aarch64-linux-android --release --features "rustls"
+        run: cargo build --target aarch64-linux-android --release --no-default-features
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -40,10 +40,11 @@ jobs:
       - run: |
           mkdir -p app/src/main/assets
           cp zeroclaw/target/aarch64-linux-android/release/zeroclaw app/src/main/assets/libzeroclaw.so
+          chmod +x app/src/main/assets/libzeroclaw.so
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.5
-      - run: ./gradlew assembleRelease --no-daemon
+      - run: chmod +x gradlew && ./gradlew assembleRelease --no-daemon
       - name: Sign APK
         id: sign
         run: |
