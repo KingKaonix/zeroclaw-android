@@ -14,6 +14,9 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
@@ -73,7 +76,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
         menu?.add(0, 1, 0, if (LicenseValidator.isPro(this)) "Pro ✓" else "Get Pro")
-        menu?.add(0, 2, 1, if (LicenseValidator.isPro(this)) "Deactivate" else "Enter License Key")
+        menu?.add(0, 2, 1, if (LicenseValidator.isPro(this)) "Deactivate" else "Activate License")
         menu?.add(0, 3, 2, "Reload")
         menu?.add(0, 4, 3, "About")
         return true
@@ -83,7 +86,8 @@ class MainActivity : AppCompatActivity() {
         when (item.itemId) {
             1 -> {
                 if (!LicenseValidator.isPro(this)) {
-                    webView.loadUrl("https://gumroad.com/l/zeroclaw-android")
+                    // Open Gumroad product page
+                    webView.loadUrl(GUMROAD_URL)
                 } else {
                     Toast.makeText(this, "Pro ✓", Toast.LENGTH_SHORT).show()
                 }
@@ -94,7 +98,7 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, "License deactivated", Toast.LENGTH_SHORT).show()
                     recreate()
                 } else {
-                    showLicenseInput()
+                    showActivationDialog()
                 }
             }
             3 -> retryLoadGateway()
@@ -120,40 +124,178 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
-    private fun showLicenseInput() {
-        val input = android.widget.EditText(this).apply {
-            hint = "Paste license key here"
+    /**
+     * Activation dialog with two tabs:
+     *  1. Auto — enter email + Gumroad sale ID, fetch key from license server
+     *  2. Manual — paste license key + signature directly
+     */
+    private fun showActivationDialog() {
+        val tabs = android.widget.TabHost(this)
+        tabs.setup()
+
+        // --- Tab 1: Auto (Gumroad sale ID lookup) ---
+        val emailInput = android.widget.EditText(this).apply {
+            hint = "Email used on Gumroad"
+            inputType = android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS or
+                        android.text.InputType.TYPE_CLASS_TEXT
+            setTextColor(android.graphics.Color.WHITE)
+            setHintTextColor(android.graphics.Color.GRAY)
+        }
+        val saleIdInput = android.widget.EditText(this).apply {
+            hint = "Gumroad sale ID (from receipt email)"
+            setTextColor(android.graphics.Color.WHITE)
+            setHintTextColor(android.graphics.Color.GRAY)
+        }
+
+        // --- Tab 2: Manual key paste ---
+        val keyInput = android.widget.EditText(this).apply {
+            hint = "License key  (ZCLAW-1:...)"
             setTextColor(android.graphics.Color.WHITE)
             setHintTextColor(android.graphics.Color.GRAY)
         }
         val sigInput = android.widget.EditText(this).apply {
-            hint = "Paste signature here"
+            hint = "Signature"
             setTextColor(android.graphics.Color.WHITE)
             setHintTextColor(android.graphics.Color.GRAY)
         }
-        val layout = android.widget.LinearLayout(this).apply {
+
+        // Build layout — simple vertical stack with a divider between sections
+        val autoLayout = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL
-            setPadding(40, 20, 40, 20)
-            addView(input)
+            setPadding(48, 24, 48, 0)
+            addView(labelView("Email"))
+            addView(emailInput)
+            addView(labelView("Sale ID"))
+            addView(saleIdInput)
+        }
+
+        val manualLayout = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+            addView(labelView("License Key"))
+            addView(keyInput)
+            addView(labelView("Signature"))
             addView(sigInput)
         }
+
+        val divider = android.view.View(this).apply {
+            setBackgroundColor(android.graphics.Color.parseColor("#333333"))
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.MATCH_PARENT, 1
+            ).apply { setMargins(0, 24, 0, 16) }
+        }
+
+        val rootLayout = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            addView(autoLayout)
+            addView(divider)
+            addView(labelView("— or paste key manually —").apply {
+                setPadding(48, 0, 48, 0)
+                textAlignment = android.view.View.TEXT_ALIGNMENT_CENTER
+            })
+            addView(manualLayout)
+        }
+
+        val scrollView = android.widget.ScrollView(this).apply {
+            addView(rootLayout)
+        }
+
         android.app.AlertDialog.Builder(this)
             .setTitle("Activate Pro")
-            .setView(layout)
+            .setView(scrollView)
             .setPositiveButton("Activate") { _, _ ->
-                val key = input.text.toString().trim()
-                val sig = sigInput.text.toString().trim()
-                if (key.isNotEmpty() && sig.isNotEmpty()) {
-                    if (LicenseValidator.activate(this, key, sig)) {
-                        Toast.makeText(this, "Pro activated ✓", Toast.LENGTH_SHORT).show()
-                        recreate()
-                    } else {
-                        Toast.makeText(this, "Invalid license key", Toast.LENGTH_LONG).show()
+                val email  = emailInput.text.toString().trim()
+                val saleId = saleIdInput.text.toString().trim()
+                val key    = keyInput.text.toString().trim()
+                val sig    = sigInput.text.toString().trim()
+
+                when {
+                    // Auto path — fetch from server
+                    email.isNotEmpty() && saleId.isNotEmpty() -> {
+                        activateViaServer(email, saleId)
                     }
+                    // Manual path
+                    key.isNotEmpty() && sig.isNotEmpty() -> {
+                        if (LicenseValidator.activate(this, key, sig)) {
+                            Toast.makeText(this, "Pro activated ✓", Toast.LENGTH_SHORT).show()
+                            recreate()
+                        } else {
+                            Toast.makeText(this, "Invalid license key", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    else -> Toast.makeText(
+                        this,
+                        "Enter your email + sale ID, or paste a license key",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
+            .setNeutralButton("Buy Pro") { _, _ -> webView.loadUrl(GUMROAD_URL) }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun labelView(text: String) = android.widget.TextView(this).apply {
+        this.text = text
+        setTextColor(android.graphics.Color.parseColor("#AAAAAA"))
+        textSize = 11f
+        setPadding(0, 16, 0, 4)
+    }
+
+    /**
+     * Call the license server to fetch a key by Gumroad sale ID.
+     * Runs on a background thread; updates UI on main thread.
+     */
+    private fun activateViaServer(email: String, saleId: String) {
+        val progressToast = Toast.makeText(this, "Verifying purchase…", Toast.LENGTH_LONG)
+        progressToast.show()
+
+        Thread {
+            try {
+                val serverUrl = URL("$LICENSE_SERVER_URL/activate")
+                val conn = serverUrl.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.doOutput = true
+                conn.connectTimeout = 10_000
+                conn.readTimeout    = 10_000
+
+                val body = """{"email":"$email","saleId":"$saleId"}"""
+                conn.outputStream.use { it.write(body.toByteArray()) }
+
+                val responseCode = conn.responseCode
+                val responseBody = conn.inputStream.bufferedReader().readText()
+                conn.disconnect()
+
+                val json = JSONObject(responseBody)
+
+                runOnUiThread {
+                    progressToast.cancel()
+                    if (responseCode == 200 && json.optBoolean("success")) {
+                        val licenseKey = json.getString("licenseKey")
+                        val signature  = json.getString("signature")
+                        if (LicenseValidator.activate(this, licenseKey, signature)) {
+                            Toast.makeText(this, "Pro activated ✓", Toast.LENGTH_SHORT).show()
+                            recreate()
+                        } else {
+                            Toast.makeText(this, "Key received but failed local verification", Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        val error = json.optString("error", "Unknown error")
+                        Toast.makeText(this, "Activation failed: $error", Toast.LENGTH_LONG).show()
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    progressToast.cancel()
+                    Toast.makeText(
+                        this,
+                        "Network error. Try the manual key method.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }.start()
     }
 
     /**
@@ -209,6 +351,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        // Update these after deploying the Cloudflare Worker and creating your Gumroad product
+        private const val GUMROAD_URL        = "https://kaonixx.gumroad.com/l/zeroclaw-android"
+        private const val LICENSE_SERVER_URL = "https://zeroclaw-license.kaonixx.workers.dev"
+
         private val WATERMARK_JS = """
             (function() {
                 if (document.getElementById('zc-watermark')) return;

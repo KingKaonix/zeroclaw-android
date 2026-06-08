@@ -3,17 +3,20 @@ main = "scripts/license-worker.js"
 compatibility_date = "2025-06-01"
 
 [vars]
-ADMIN_KEY = "change-me-in-dashboard"
-LEMONSQUEEZY_STORE_ID = ""
-LEMONSQUEEZY_PRO_VARIANT_ID = ""
-LEMONSQUEEZY_ENT_VARIANT_ID = ""
+# Your Gumroad product permalink slug (e.g. "zeroclaw-android" from gumroad.com/l/zeroclaw-android)
+# Leave GUMROAD_ENT_PERMALINK empty if you only have one product tier.
+GUMROAD_PRO_PERMALINK = ""
+GUMROAD_ENT_PERMALINK = ""
 
-# Set via: npx wrangler secret put LEMONSQUEEZY_API_KEY
-# Set via: npx wrangler secret put LEMONSQUEEZY_WEBHOOK_SECRET
-# Set via: npx wrangler secret put ZEROCLAW_PRIVATE_KEY
-# Set via: npx wrangler secret put ZEROCLAW_PUBLIC_KEY
+# Set all secrets via wrangler CLI — never put real values here:
+#   npx wrangler secret put ZEROCLAW_PRIVATE_KEY   ← base64 PKCS8 ed25519 private key
+#   npx wrangler secret put ZEROCLAW_PUBLIC_KEY    ← base64 SPKI  ed25519 public key
+#   npx wrangler secret put ADMIN_KEY              ← random string, keep private
+#   npx wrangler secret put GUMROAD_ACCESS_TOKEN   ← from Gumroad Settings → Advanced → Applications
 
 [[d1_databases]]
 binding = "DB"
 database_name = "zeroclaw-licenses"
 database_id = ""
+# ^ paste your D1 database_id here after:
+#   npx wrangler d1 create zeroclaw-licenses

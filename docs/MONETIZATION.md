@@ -5,114 +5,139 @@
 | Component | Status | File |
 |-----------|--------|------|
 | License validation (ed25519, offline) | ✅ Done | `LicenseValidator.kt` |
-| License key gen (offline) | ✅ Done | `scripts/keygen.js` |
+| License key gen (offline CLI) | ✅ Done | `scripts/keygen.js` |
 | Cloudflare Worker license server | ✅ Done | `scripts/license-worker.js` |
-| LemonSqueezy webhook integration | ✅ Done | `/webhook/lemonsqueezy` endpoint |
-| LemonSqueezy API purchase verification | ✅ Done | `/activate` endpoint |
+| Gumroad sale ping webhook | ✅ Done | `POST /webhook/gumroad` |
+| Gumroad API sale verification | ✅ Done | verifyGumroadSale() |
+| Refund / chargeback revocation | ✅ Done | refunded/disputed ping handling |
 | D1 license database | ✅ Done | `scripts/schema.sql` |
 | License revocation | ✅ Done | D1 tier=free check on /validate |
-| Admin keygen endpoint | ✅ Done | `/keygen?auth=...` |
-| Admin stats endpoint | ✅ Done | `/stats?auth=...` → MRR calc |
-| Free/Pro UI gating | ✅ Done | watermark, menu, feature checks |
-| Pro tier → Gumroad link | ✅ Done | `MainActivity.kt` menu |
+| Admin keygen endpoint | ✅ Done | `GET /keygen?auth=...` |
+| Admin stats endpoint | ✅ Done | `GET /stats?auth=...` |
+| In-app auto-activation (sale ID) | ✅ Done | `MainActivity.kt` |
+| Manual key paste activation | ✅ Done | `MainActivity.kt` |
+| Watermark for free tier | ✅ Done | WebView JS injection |
 
 ## 🔲 To Set Up (one-time, manual)
 
-1. **LemonSqueezy account** → create store + 2 products (Pro $8/mo, Enterprise $20/mo)
-2. **Cloudflare deployment**:
-   ```bash
-   npx wrangler d1 create zeroclaw-licenses
-   # Update database_id in wrangler.toml
-   npx wrangler d1 execute zeroclaw-licenses --file=scripts/schema.sql
-   npx wrangler secret put ZEROCLAW_PRIVATE_KEY
-   npx wrangler secret put ZEROCLAW_PUBLIC_KEY
-   npx wrangler secret put ADMIN_KEY
-   npx wrangler secret put LEMONSQUEEZY_API_KEY
-   npx wrangler secret put LEMONSQUEEZY_WEBHOOK_SECRET
-   npx wrangler deploy
-   ```
-3. **LemonSqueezy webhook** → point to `https://license.zeroclaw.app/webhook/lemonsqueezy`
-4. **Update Android app** → change Gumroad URL to LemonSqueezy checkout URL in `MainActivity.kt`
-5. **Generate keypair** → `node scripts/keygen.js` (ed25519), put public key in `LicenseValidator.kt`
+### 1. Gumroad
+1. Create account at gumroad.com
+2. New Product → "ZeroClaw Android Pro" → $8 (or $5 alpha)
+3. Set the permalink slug (e.g. `zeroclaw-android`) — this becomes your store URL:
+   `https://kaonixx.gumroad.com/l/zeroclaw-android`
+4. Settings → Advanced → Applications → **Create an application** → copy the Access Token
+5. Product settings → **Ping a URL**: `https://zeroclaw-license.kaonixx.workers.dev/webhook/gumroad`
+
+### 2. Cloudflare Worker
+```bash
+# Create the D1 database
+npx wrangler d1 create zeroclaw-licenses
+
+# Paste the database_id into wrangler.toml [[d1_databases]]
+
+# Run the schema
+npx wrangler d1 execute zeroclaw-licenses --file=scripts/schema.sql --remote
+
+# Set secrets (never put these in wrangler.toml)
+npx wrangler secret put ZEROCLAW_PRIVATE_KEY   # from: node scripts/keygen.js (PKCS8 base64)
+npx wrangler secret put ZEROCLAW_PUBLIC_KEY    # from: node scripts/keygen.js (SPKI base64)
+npx wrangler secret put ADMIN_KEY              # any random secret string
+npx wrangler secret put GUMROAD_ACCESS_TOKEN   # from Gumroad Settings → Advanced
+
+# Deploy
+npx wrangler deploy
+```
+
+### 3. Update Android app
+In `MainActivity.kt` companion object, update the two constants to match your actual URLs:
+```kotlin
+private const val GUMROAD_URL        = "https://YOUR_NAME.gumroad.com/l/YOUR_PERMALINK"
+private const val LICENSE_SERVER_URL = "https://zeroclaw-license.YOUR_SUBDOMAIN.workers.dev"
+```
+
+### 4. Generate keypair
+```bash
+node scripts/keygen.js
+# (no args — prints usage and the public key)
+# Paste PRIVATE_KEY_B64 when prompted for ZEROCLAW_PRIVATE_KEY wrangler secret
+# The PUBLIC_KEY_B64 is already baked into LicenseValidator.kt
+```
+
+---
+
+## How It Works
+
+### Purchase flow
+```
+Buyer clicks "Get Pro" in app
+  → Gumroad checkout page ($8 one-time)
+  → Payment processed
+  → Gumroad pings POST /webhook/gumroad
+  → Worker verifies sale via Gumroad API
+  → Issues ed25519-signed license key
+  → Stores in D1
+  → Returns key in ping response (Gumroad shows it on receipt page)
+```
+
+### Activation flow
+```
+Buyer opens app → menu → "Activate License"
+  Option A (auto): enters email + Gumroad sale ID from receipt
+    → App calls POST /activate on license server
+    → Server verifies + returns key
+    → App activates offline
+
+  Option B (manual): pastes license key + signature
+    → App verifies locally against baked-in public key
+    → Activates offline, no network needed
+```
+
+### Refund flow
+```
+Buyer refunds on Gumroad
+  → Gumroad pings /webhook/gumroad with refunded=true
+  → Worker sets tier='free' in D1
+  → Next time app calls /validate, returns revoked
+  → App degrades to free tier on next restart
+```
+
+---
 
 ## Tiers
 
 ### Free ($0)
-- Basic chat agent via WebView dashboard
-- 1 channel (Telegram)
-- 3 skills
+- ZeroClaw agent via WebView dashboard
 - Bring your own API key
 - "UNLICENSED" watermark in WebView corner
 
-### Pro ($8/month)
-- All channels (Telegram, Discord, WhatsApp, Signal, Matrix, email, webhook, CLI)
-- All skills + cloud sync
-- Managed LLM via `api.zeroclaw.app/chat` (OpenRouter, ~$0.15/M tokens)
+### Pro ($8 one-time)
 - No watermark
-- Priority support (48hr)
+- Receipt shows license key immediately
+- Auto-activate via email + sale ID
 
-### Enterprise ($20/month)
-- White-label
-- Custom channels + SLA (99.9%)
-- Bulk 10+ seat discounts
-
-## Payment Flow
-
-```
-Customer taps "Get Pro"
-  → LemonSqueezy checkout (Pro or Enterprise)
-  → Payment processed (Stripe/PayPal)
-  → LemonSqueezy webhook → /webhook/lemonsqueezy
-  → CF Worker issues ed25519-signed license key
-  → Stored in D1 + emailed to customer
-  → Customer enters key in app
-  → App verifies signature locally (offline-capable)
-  → Pro features unlocked, watermark removed
-```
+---
 
 ## Revenue Math
 
 | Metric | Value |
 |--------|-------|
-| Pro price | $8/mo |
-| Ent price | $20/mo |
-| LemonSqueezy cut | 5% + $0.50 |
-| Net Pro | $7.10/mo per sub |
-| Net Ent | $18.50/mo per sub |
-| Managed LLM cost | ~$0.75/mo avg user |
-| **Net margin Pro** | **~$6.35/mo** |
-| Break-even | ~250 Pro subs ≈ $2,000 MRR |
+| Price | $8 one-time |
+| Gumroad cut | 10% |
+| Net per sale | ~$7.20 |
+| 100 sales | ~$720 |
+| 500 sales | ~$3,600 |
 
-## Marketing ($0 budget)
+Gumroad charges a flat 10% on free-tier accounts (or ~3.5% + $0.30 if on Gumroad Pro at $10/mo).
 
-| Channel | What | When |
-|---------|------|------|
-| HN | Show HN: ZeroClaw Android | Launch |
-| r/selfhosted, r/LocalLLaMA | Port announcement | Launch+1 |
-| r/androiddev | Cross-compiling Rust case study | Week 2 |
-| X/Twitter | Build in public | Ongoing |
-| zeroclaw-labs Discord | Be helpful, mention naturally | Ongoing |
+## Admin endpoints
 
-## Year 1 Projection
+```bash
+# Issue a comp key
+curl "https://zeroclaw-license.YOUR_SUBDOMAIN.workers.dev/keygen?auth=YOUR_ADMIN_KEY&email=user@example.com&tier=pro"
 
-| Month | Users | Pro | Ent | MRR |
-|-------|-------|-----|-----|-----|
-| 1 | 20 | 2 | 0 | $16 |
-| 3 | 100 | 20 | 1 | $180 |
-| 6 | 500 | 100 | 5 | $900 |
-| 9 | 1,250 | 250 | 12 | $2,240 |
-| 12 | 2,000 | 400 | 20 | **$3,600** |
+# View stats
+curl "https://zeroclaw-license.YOUR_SUBDOMAIN.workers.dev/stats?auth=YOUR_ADMIN_KEY"
 
-Break-even (replaces income): **Month 8-9**
-
-## Expenses
-
-| Item | Cost |
-|------|------|
-| zeroclaw.app domain | $12/yr |
-| Cloudflare Workers | $0 (free tier) |
-| GitHub | $0 (public) |
-| LemonSqueezy | 5% + $0.50/sale |
-| OpenRouter | Pay per token |
-| Play Store | $25 one-time (when ready) |
-| **Fixed** | **~$1/mo** |
+# Verify a key
+curl "https://zeroclaw-license.YOUR_SUBDOMAIN.workers.dev/validate?key=ZCLAW-1:...&sig=..."
+```
