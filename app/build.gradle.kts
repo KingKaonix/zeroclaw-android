@@ -38,14 +38,11 @@ android {
         jvmTarget = "17"
     }
 
-    // Don't compress the .so binary in assets
-    aaptOptions {
-        noCompress += listOf("so")
-    }
-
+    // jniLibs/arm64-v8a/libzeroclaw.so is installed to nativeLibraryDir at install time
+    // which is the only exec-allowed path on Android 10+ (W^X policy)
     sourceSets {
         getByName("main") {
-            assets.srcDirs("src/main/assets")
+            jniLibs.srcDirs("src/main/jniLibs")
         }
     }
 }

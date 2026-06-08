@@ -130,58 +130,17 @@ class ZeroClawService : Service() {
     }
 
     private fun extractBinary(): File? {
-        // Android blocks exec() from files/ on API 29+ (W^X policy).
-        // We extract to the app's nativeLibraryDir-adjacent location:
-        // use a subfolder of filesDir but copy via shell chmod after extract.
-        // The key is calling File.setExecutable() AND ensuring the parent dir
-        // is not on a noexec mount — which filesDir can be on some devices.
-        // Safest solution: extract to a file in the app's own OBB/data path
-        // that we've confirmed is executable by running a test.
-
-        // Primary target: filesDir (works on most devices)
-        // Fallback: codeCacheDir (specifically designed for executable code)
-        val candidates = listOf(
-            File(filesDir, "zeroclaw"),
-            File(codeCacheDir, "zeroclaw"),
-        )
-
-        val versionFile = File(filesDir, "zeroclaw.version")
-        val currentVersion = getAppVersionCode().toString()
-        val storedVersion = if (versionFile.exists()) versionFile.readText().trim() else ""
-
-        // Find existing valid executable
-        for (dest in candidates) {
-            if (dest.exists() && dest.length() > 0 && storedVersion == currentVersion) {
-                if (dest.canExecute()) return dest
-                // Try to re-chmod
-                Runtime.getRuntime().exec(arrayOf("chmod", "755", dest.absolutePath)).waitFor()
-                if (dest.canExecute()) return dest
-            }
+        // On Android 10+ W^X policy blocks exec() from any writable app directory.
+        // The only directory Android allows executing native code from is the
+        // app's nativeLibraryDir — which is populated automatically from .so
+        // files in src/main/jniLibs/arm64-v8a/ at install time.
+        // We ship the binary as libzeroclaw.so in jniLibs and exec it directly.
+        val nativeLib = File(applicationInfo.nativeLibraryDir, "libzeroclaw.so")
+        if (nativeLib.exists()) {
+            Log.i(TAG, "Using native library at ${nativeLib.absolutePath}")
+            return nativeLib
         }
-
-        // Extract fresh
-        for (dest in candidates) {
-            try {
-                dest.parentFile?.mkdirs()
-                applicationContext.assets.open("libzeroclaw.so").use { input ->
-                    dest.outputStream().use { output -> input.copyTo(output) }
-                }
-                // chmod via Runtime — more reliable than File.setExecutable on some ROMs
-                Runtime.getRuntime().exec(arrayOf("chmod", "755", dest.absolutePath)).waitFor()
-
-                if (dest.canExecute()) {
-                    versionFile.writeText(currentVersion)
-                    Log.i(TAG, "Binary extracted to ${dest.absolutePath}")
-                    return dest
-                }
-                Log.w(TAG, "Cannot execute from ${dest.absolutePath}, trying next location")
-                dest.delete()
-            } catch (e: Exception) {
-                Log.w(TAG, "Extraction to ${dest.absolutePath} failed: ${e.message}")
-            }
-        }
-
-        Log.e(TAG, "All extraction targets failed — device may block exec from app dirs")
+        Log.e(TAG, "Native library not found at ${nativeLib.absolutePath}")
         return null
     }
 
@@ -198,7 +157,6 @@ class ZeroClawService : Service() {
             1L
         }
     }
-
     private fun generateDefaultConfig(): String {
         val dataPath = filesDir.absolutePath
         return """

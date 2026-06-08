@@ -17,6 +17,6 @@ GUMROAD_ENT_PERMALINK = ""
 [[d1_databases]]
 binding = "DB"
 database_name = "zeroclaw-licenses"
-database_id = ""
+database_id = "b8e95deb-d198-4a42-9e8f-1cd4c67562d7"
 # ^ paste your D1 database_id here after:
 #   npx wrangler d1 create zeroclaw-licenses
