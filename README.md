@@ -1,5 +1,5 @@
 # ZeroClaw Android 🦀📱
-
+[![Release ZeroClaw Android](https://github.com/KingKaonix/zeroclaw-android/actions/workflows/release.yml/badge.svg)](https://github.com/KingKaonix/zeroclaw-android/actions/workflows/release.yml)
 **Full ZeroClaw AI agent runtime on Android. On-device, private, monetizable.**
 
 Fork of [zeroclaw-labs/zeroclaw](https://github.com/zeroclaw-labs/zeroclaw) cross-compiled for ARM64 Android and wrapped in a minimal foreground service + WebView dashboard.
