@@ -352,8 +352,8 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         // Update these after deploying the Cloudflare Worker and creating your Gumroad product
-        private const val GUMROAD_URL        = "https://kaonixx.gumroad.com/l/zeroclaw-android"
-        private const val LICENSE_SERVER_URL = "https://zeroclaw-license.kaonixx.workers.dev"
+        private const val GUMROAD_URL        = "https://mulikjo.gumroad.com/l/zeroclaw-android"
+        private const val LICENSE_SERVER_URL = "https://zeroclaw-license.joemulik.workers.dev"
 
         private val WATERMARK_JS = """
             (function() {
