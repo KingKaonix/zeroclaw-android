@@ -18,6 +18,18 @@ jobs:
         with:
           targets: aarch64-linux-android
 
+      - name: Cache Rust build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            zeroclaw/target
+          key: ${{ runner.os }}-cargo-android-full-${{ hashFiles('zeroclaw/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-android-full-
+            ${{ runner.os }}-cargo-android-
+
       - name: Setup Android NDK
         uses: nttld/setup-ndk@v1
         id: setup-ndk
@@ -34,15 +46,18 @@ jobs:
           rustflags = ["-C", "link-arg=-ldl"]
           EOF
 
-      - name: Build zeroclaw (minimal, no-default-features for CI speed)
+      - name: Build zeroclaw (full — agent runtime, gateway, channels)
         working-directory: ./zeroclaw
         env:
           CC_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
           AR_aarch64_linux_android: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar
           CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: ${{ steps.setup-ndk.outputs.ndk-path }}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang
           PKG_CONFIG_ALLOW_CROSS: "1"
+          OPENSSL_NO_VENDOR: "1"
+          SQLITE_BUNDLED: "1"
         run: |
-          cargo build --target aarch64-linux-android --release --no-default-features 2>&1
+          cargo build --target aarch64-linux-android --release \
+            --features "agent-runtime,gateway,default-channels,channel-telegram,channel-discord,channel-webhook" 2>&1
 
       - name: Upload binary
         if: success()
