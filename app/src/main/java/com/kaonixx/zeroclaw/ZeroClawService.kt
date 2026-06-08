@@ -98,15 +98,12 @@ class ZeroClawService : Service() {
                     configFile.writeText(generateDefaultConfig())
                 }
 
-                // Make binary executable
-                binary.setExecutable(true)
-
                 val pb = ProcessBuilder(
                     binary.absolutePath,
                     "--config-dir", configDir.absolutePath,
                     "--gateway", "127.0.0.1:$GATEWAY_PORT"
                 )
-                pb.directory(configDir)
+                pb.directory(filesDir)  // working dir must be writable, not binary's dir
                 pb.redirectErrorStream(true)
                 pb.environment()["HOME"] = filesDir.absolutePath
                 pb.environment()["RUST_LOG"] = "info"
@@ -133,29 +130,59 @@ class ZeroClawService : Service() {
     }
 
     private fun extractBinary(): File? {
-        val dest = File(filesDir, "libzeroclaw.so")
+        // Android blocks exec() from files/ on API 29+ (W^X policy).
+        // We extract to the app's nativeLibraryDir-adjacent location:
+        // use a subfolder of filesDir but copy via shell chmod after extract.
+        // The key is calling File.setExecutable() AND ensuring the parent dir
+        // is not on a noexec mount — which filesDir can be on some devices.
+        // Safest solution: extract to a file in the app's own OBB/data path
+        // that we've confirmed is executable by running a test.
 
-        // Check if we need to re-extract (first run, or after app update)
-        val versionFile = File(filesDir, "libzeroclaw.version")
+        // Primary target: filesDir (works on most devices)
+        // Fallback: codeCacheDir (specifically designed for executable code)
+        val candidates = listOf(
+            File(filesDir, "zeroclaw"),
+            File(codeCacheDir, "zeroclaw"),
+        )
+
+        val versionFile = File(filesDir, "zeroclaw.version")
         val currentVersion = getAppVersionCode().toString()
         val storedVersion = if (versionFile.exists()) versionFile.readText().trim() else ""
 
-        if (dest.exists() && dest.length() > 0 && storedVersion == currentVersion) {
-            return dest
+        // Find existing valid executable
+        for (dest in candidates) {
+            if (dest.exists() && dest.length() > 0 && storedVersion == currentVersion) {
+                if (dest.canExecute()) return dest
+                // Try to re-chmod
+                Runtime.getRuntime().exec(arrayOf("chmod", "755", dest.absolutePath)).waitFor()
+                if (dest.canExecute()) return dest
+            }
         }
 
-        return try {
-            applicationContext.assets.open("libzeroclaw.so").use { input ->
-                dest.outputStream().use { output ->
-                    input.copyTo(output)
+        // Extract fresh
+        for (dest in candidates) {
+            try {
+                dest.parentFile?.mkdirs()
+                applicationContext.assets.open("libzeroclaw.so").use { input ->
+                    dest.outputStream().use { output -> input.copyTo(output) }
                 }
+                // chmod via Runtime — more reliable than File.setExecutable on some ROMs
+                Runtime.getRuntime().exec(arrayOf("chmod", "755", dest.absolutePath)).waitFor()
+
+                if (dest.canExecute()) {
+                    versionFile.writeText(currentVersion)
+                    Log.i(TAG, "Binary extracted to ${dest.absolutePath}")
+                    return dest
+                }
+                Log.w(TAG, "Cannot execute from ${dest.absolutePath}, trying next location")
+                dest.delete()
+            } catch (e: Exception) {
+                Log.w(TAG, "Extraction to ${dest.absolutePath} failed: ${e.message}")
             }
-            versionFile.writeText(currentVersion)
-            dest
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to extract binary from assets", e)
-            null
         }
+
+        Log.e(TAG, "All extraction targets failed — device may block exec from app dirs")
+        return null
     }
 
     private fun getAppVersionCode(): Long {
