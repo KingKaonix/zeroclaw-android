@@ -499,7 +499,7 @@ export default function Config() {
     <div className="flex h-full overflow-hidden">
       {!lockedSection && (
         <aside
-          className="w-56 flex-shrink-0 border-r overflow-y-auto"
+          className="hidden md:block w-56 flex-shrink-0 border-r overflow-y-auto"
           style={{
             borderColor: "var(--pc-border)",
             background: "var(--pc-bg-surface)",
@@ -568,9 +568,36 @@ export default function Config() {
         </aside>
       )}
 
-      <main className="flex-1 overflow-y-auto p-6">
+      <main className="flex-1 overflow-y-auto p-4 md:p-6">
         {activeSection && (
-          <div className="flex flex-col gap-4 max-w-3xl min-h-full">
+          <div className="flex flex-col gap-4 max-w-4xl mx-auto min-h-full">
+            {/* Mobile section selector */}
+            <div className="md:hidden flex flex-col gap-2 mb-2">
+              <label
+                className="text-xs font-semibold uppercase tracking-wider"
+                style={{ color: "var(--pc-text-secondary)" }}
+              >
+                Section
+              </label>
+              <select
+                className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1"
+                style={{
+                  background: "var(--pc-bg-surface)",
+                  borderColor: "var(--pc-border)",
+                  color: "var(--pc-text-primary)",
+                  border: "1px solid var(--pc-border)",
+                }}
+                value={activeKey ?? ""}
+                onChange={(e) => goToSection(e.target.value)}
+              >
+                {sections.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Layout note: every wrapper between <main> (the scroll
                 container) and FieldForm's save bar uses flex-1 + min-h-0
                 so the form stretches to the viewport bottom. Without
