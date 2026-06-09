@@ -173,8 +173,8 @@ function SidebarLogo({ collapsed }: { collapsed: boolean }) {
       <div className="relative shrink-0">
         <div className="absolute -inset-1.5 rounded-xl" style={{ background: 'linear-gradient(135deg, rgba(var(--pc-accent-rgb), 0.15), rgba(var(--pc-accent-rgb), 0.05))' }} />
         <img
-          src={`${basePath}/_app/zeroclaw-trans.png`}
-          alt="ZeroClaw"
+          src={`${basePath}/_app/husky-logo.svg`}
+          alt="Husky"
           className="relative h-9 w-9 rounded-xl object-cover"
           onError={(e) => {
             e.currentTarget.style.display = 'none';

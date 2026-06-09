@@ -2,6 +2,14 @@
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24"
     android:tint="@color/zeroclaw_primary">
+    <!-- Husky face silhouette for notification icon -->
+    <!-- Outer face -->
     <path android:fillColor="#FFFFFF"
-        android:pathData="M3,3h4l10,14h-4zM3,17h4l3,-4l2,0l-3,4h4l3,-4l2,0l-3,4h4l-10,-14l0,6l-2,0l0,-2z"/>
+        android:pathData="M12,3C8,3 5,5 3,8L2,11L1,12C1,14 1,15 2,16L3,18L4,20L6,21L8,23L12,24L16,23L18,21L20,20L21,18L22,16C23,15 23,14 22,12L23,11L22,8C20,5 17,3 12,3Z"/>
+    <!-- Left ear -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M3,8C2,5 3,3 5,3C7,3 7,5 6,7L5,9L4,9L3,8Z"/>
+    <!-- Right ear -->
+    <path android:fillColor="#FFFFFF"
+        android:pathData="M21,8C22,5 21,3 19,3C17,3 17,5 18,7L19,9L20,9L21,8Z"/>
 </vector>

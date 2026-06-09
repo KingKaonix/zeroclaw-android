@@ -20,10 +20,10 @@ class ZeroClawService : Service() {
     private val GATEWAY_PORT = 18789
 
     companion object {
-        const val TAG = "ZeroClaw"
+        const val TAG = "SimonAI"
         const val NOTIFICATION_ID = 1
-        const val CHANNEL_ID = "zeroclaw_service"
-        const val CHANNEL_NAME = "ZeroClaw Agent"
+        const val CHANNEL_ID = "simonai_service"
+        const val CHANNEL_NAME = "SimonAI Agent"
     }
 
     override fun onCreate() {
@@ -49,7 +49,7 @@ class ZeroClawService : Service() {
                 CHANNEL_ID, CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "ZeroClaw agent service notification"
+                description = "SimonAI agent service notification"
                 setShowBadge(false)
             }
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -72,7 +72,7 @@ class ZeroClawService : Service() {
             Notification.Builder(this)
         }
         return builder
-            .setContentTitle("ZeroClaw $tier")
+            .setContentTitle("SimonAI $tier")
             .setContentText("Agent running on :$GATEWAY_PORT")
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
@@ -101,7 +101,8 @@ class ZeroClawService : Service() {
                 val pb = ProcessBuilder(
                     binary.absolutePath,
                     "--config-dir", configDir.absolutePath,
-                    "--gateway", "127.0.0.1:$GATEWAY_PORT"
+                    "daemon",
+                    "-p", GATEWAY_PORT.toString()
                 )
                 pb.directory(filesDir)  // working dir must be writable, not binary's dir
                 pb.redirectErrorStream(true)
@@ -160,11 +161,11 @@ class ZeroClawService : Service() {
     private fun generateDefaultConfig(): String {
         val dataPath = filesDir.absolutePath
         return """
-# ZeroClaw Android - Default Config
+# SimonAI Android - Default Config
 # Edit this file to configure your agent.
 
 [agent]
-name = "ZeroClaw-Android"
+name = "SimonAI-Android"
 model = "gpt-4o-mini"
 
 [provider]

@@ -14,7 +14,6 @@ import { loadLocale, saveLocale } from "./contexts/ThemeContext";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { DraftContext, useDraftStore } from "./hooks/useDraft";
 import { getAdminPairCode, getQuickstartState } from "./lib/api";
-import { basePath } from "./lib/basePath";
 import { ConfigDraftProvider } from "./lib/draftStore";
 import { setLocale, type Locale } from "./lib/i18n";
 import { Router } from "./router/router";
@@ -175,88 +174,110 @@ function PairingDialog({
 
   return (
     <div
-      className="min-h-screen flex items-center justify-center"
+      className="min-h-screen flex items-center justify-center relative overflow-hidden"
       style={{ background: "var(--pc-bg-base)" }}
     >
-      {/* Ambient glow */}
-      <div className="relative surface-panel p-8 w-full max-w-md animate-fade-in-scale">
-        <div className="text-center mb-8">
-          <img
-            src={`${basePath}/_app/zeroclaw-trans.png`}
-            alt="ZeroClaw"
-            className="h-20 w-20 rounded-2xl object-cover mx-auto mb-4 animate-float"
-            onError={(e) => {
-              e.currentTarget.style.display = "none";
-            }}
-          />
-          <h1 className="text-2xl font-bold mb-2 text-gradient-blue">
-            ZeroClaw
-          </h1>
-          <p className="text-sm" style={{ color: "var(--pc-text-muted)" }}>
-            {displayCode
-              ? "Your pairing code — click Pair to connect"
-              : "Enter the pairing code from your terminal"}
-          </p>
-        </div>
-
-        {/* Show the pairing code if available (localhost) */}
-        {!codeLoading && displayCode && (
-          <div
-            className="mb-6 p-4 rounded-2xl text-center border"
-            style={{
-              background: "var(--pc-accent-glow)",
-              borderColor: "var(--pc-accent-dim)",
-            }}
-          >
+      <div className="relative w-full max-w-sm animate-fade-in-scale" style={{ zIndex: 1 }}>
+        <div className="rounded-xl border p-8 text-center"
+          style={{
+            background: "var(--pc-bg-surface)",
+            borderColor: "var(--pc-border)",
+          }}>
+          <div className="mb-6">
             <div
-              className="text-4xl font-mono font-bold tracking-[0.4em] py-2"
-              style={{ color: "var(--pc-text-primary)" }}
+              className="w-16 h-16 mx-auto mb-5 rounded-2xl flex items-center justify-center"
+              style={{
+                background: "var(--pc-accent-glow)",
+                border: "1px solid var(--pc-accent-dim)",
+              }}
             >
-              {displayCode}
+              <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M14 2L17.09 8.26L24 9.27L19 14.14L20.18 21.02L14 17.77L7.82 21.02L9 14.14L4 9.27L10.91 8.26L14 2Z" fill="var(--pc-accent)" opacity="0.9"/>
+              </svg>
             </div>
-            <p
-              className="text-xs mt-2"
-              style={{ color: "var(--pc-text-muted)" }}
-            >
-              Enter this code below or on another device
+            <h1 className="text-xl font-semibold mb-1" style={{ color: "var(--pc-text-primary)", letterSpacing: "-0.02em" }}>
+              SimonAI
+            </h1>
+            <p className="text-sm" style={{ color: "var(--pc-text-muted)" }}>
+              {displayCode
+                ? "Your pairing code — ready to connect"
+                : "Enter the 6-digit code from your terminal"}
             </p>
           </div>
-        )}
 
-        <form onSubmit={handleSubmit}>
-          <input
-            type="text"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            placeholder="6-digit code"
-            className="input-electric w-full px-4 py-4 text-center text-2xl tracking-[0.3em] font-medium mb-4"
-            maxLength={6}
-            autoFocus
-          />
-          {error && (
-            <p
-              aria-live="polite"
-              className="text-sm mb-4 text-center animate-fade-in"
-              style={{ color: "var(--color-status-error)" }}
+          {/* Show the pairing code if available (localhost) */}
+          {!codeLoading && displayCode && (
+            <div
+              className="mb-6 p-5 rounded-xl text-center"
+              style={{
+                background: "var(--pc-accent-glow)",
+                border: "1px solid var(--pc-accent-dim)",
+              }}
             >
-              {error}
-            </p>
+              <div
+                className="text-3xl font-mono font-bold tracking-[0.4em] py-2"
+                style={{ color: "var(--pc-text-primary)" }}
+              >
+                {displayCode}
+              </div>
+            </div>
           )}
-          <button
-            type="submit"
-            disabled={loading || code.length < 6}
-            className="btn-electric w-full py-3.5 text-sm font-semibold tracking-wide"
-          >
-            {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                Pairing...
-              </span>
-            ) : (
-              "Pair"
+
+          <form onSubmit={handleSubmit}>
+            <input
+              type="text"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="6-digit code"
+              className="w-full px-4 py-3.5 text-center text-2xl tracking-[0.3em] font-medium mb-4 rounded-lg"
+              style={{
+                background: "var(--pc-bg-input)",
+                border: "1px solid var(--pc-border)",
+                color: "var(--pc-text-primary)",
+                fontFamily: "var(--pc-font-mono)",
+              }}
+              onFocus={(e) => {
+                e.target.style.borderColor = "var(--pc-accent-dim)";
+                e.target.style.boxShadow = "0 0 0 3px var(--pc-accent-glow)";
+              }}
+              onBlur={(e) => {
+                e.target.style.borderColor = "var(--pc-border)";
+                e.target.style.boxShadow = "none";
+              }}
+              maxLength={6}
+              autoFocus
+            />
+            {error && (
+              <p
+                aria-live="polite"
+                className="text-sm mb-4 text-center animate-fade-in"
+                style={{ color: "var(--color-status-error)" }}
+              >
+                {error}
+              </p>
             )}
-          </button>
-        </form>
+            <button
+              type="submit"
+              disabled={loading || code.length < 6}
+              className="w-full py-3 text-sm font-semibold rounded-lg transition-all duration-200"
+              style={{
+                background: loading || code.length < 6 ? "var(--pc-bg-elevated)" : "var(--pc-accent)",
+                color: loading || code.length < 6 ? "var(--pc-text-muted)" : "#fff",
+                border: loading || code.length < 6 ? "1px solid var(--pc-border)" : "1px solid transparent",
+                cursor: loading || code.length < 6 ? "not-allowed" : "pointer",
+              }}
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="h-4 w-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Pairing...
+                </span>
+              ) : (
+                "Pair"
+              )}
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );

@@ -38,7 +38,7 @@ class MainActivity : AppCompatActivity() {
                 displayZoomControls = false
                 loadWithOverviewMode = true
                 useWideViewPort = true
-                userAgentString = "ZeroClaw-Android/1.0"
+                userAgentString = "SimonAI-Android/1.0"
             }
             webView.webChromeClient = WebChromeClient()
             setContentView(webView)
@@ -112,7 +112,7 @@ class MainActivity : AppCompatActivity() {
             null,
             """
             <html><body style="background:#111;color:#eee;padding:40px;font-family:sans-serif">
-            <h2 style="color:#00e5ff">ZeroClaw Android</h2>
+            <h2 style="color:#00e5ff">SimonAI</h2>
             <p>Version 1.0.0-alpha</p>
             <p>License: ${if (LicenseValidator.isPro(this)) "Pro ✓" else "Free"}</p>
             <hr style="border-color:#333">
@@ -307,7 +307,7 @@ class MainActivity : AppCompatActivity() {
             webView.webViewClient = WebViewClient()
             webView.loadData(
                 "<html><body style='color:#eee;background:#111;padding:40px;font-family:sans-serif'>" +
-                "<h2>ZeroClaw not responding</h2>" +
+                "<h2>SimonAI not responding</h2>" +
                 "<p>The agent service did not start in time. Use the Reload option from the menu, " +
                 "or restart the app.</p></body></html>",
                 "text/html", "utf-8"
@@ -363,7 +363,7 @@ class MainActivity : AppCompatActivity() {
                 wm.style.cssText = 'position:fixed;bottom:8px;right:12px;z-index:9999;' +
                     'color:rgba(255,255,255,0.15);font-size:11px;font-family:monospace;' +
                     'pointer-events:none;user-select:none;';
-                wm.textContent = 'ZeroClaw \u00b7 UNLICENSED';
+                wm.textContent = 'SimonAI \u00b7 UNLICENSED';
                 document.body.appendChild(wm);
             })();
         """.trimIndent()

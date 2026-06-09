@@ -1,4 +1,4 @@
-﻿name: Build ZeroClaw Android
+﻿name: SimonAI Android CI
 
 on:
   push:

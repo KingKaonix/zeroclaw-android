@@ -1,2 +1,2 @@
 ﻿[target.aarch64-linux-android]
-linker = "C:\\Users\\Kaos\\AppData\\Local\\Android\\Sdk\\ndk\\27.0.12077973\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\aarch64-linux-android21-clang.cmd"
+linker = "/home/kaos/android-sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"

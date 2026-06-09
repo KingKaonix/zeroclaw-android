@@ -12,7 +12,7 @@ if [ -d "$REPO_ROOT/zeroclaw" ]; then
   echo "[2/4] Building zeroclaw for aarch64..."
   cd "$REPO_ROOT/zeroclaw"
   export PKG_CONFIG_ALLOW_CROSS=1
-  if cargo build --target aarch64-linux-android --release --no-default-features 2>&1; then
+  if cargo build --target aarch64-linux-android --release 2>&1; then
     mkdir -p "$REPO_ROOT/app/src/main/jniLibs/arm64-v8a"
     cp target/aarch64-linux-android/release/zeroclaw "$REPO_ROOT/app/src/main/jniLibs/arm64-v8a/libzeroclaw.so"
     echo "[✓] Built from source"

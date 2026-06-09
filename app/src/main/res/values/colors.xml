@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="zeroclaw_primary">#FF00E5FF</color>
+    <color name="zeroclaw_primary">#FF7C3AED</color>
     <color name="zeroclaw_dark">#FF111111</color>
-    <color name="zeroclaw_darker">#FF0A0A0A</color>
-    <color name="zeroclaw_accent">#FF00BCD4</color>
-    <color name="zeroclaw_text">#FFEEEEEE</color>
+    <color name="zeroclaw_darker">#FF09090B</color>
+    <color name="zeroclaw_accent">#FF7C3AED</color>
+    <color name="zeroclaw_text">#FFFAFAFA</color>
 </resources>

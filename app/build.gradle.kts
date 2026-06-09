@@ -38,6 +38,12 @@ android {
         jvmTarget = "17"
     }
 
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     // jniLibs/arm64-v8a/libzeroclaw.so is installed to nativeLibraryDir at install time
     // which is the only exec-allowed path on Android 10+ (W^X policy)
     sourceSets {

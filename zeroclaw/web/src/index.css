@@ -32,12 +32,12 @@
 }
 
 :root {
-  /* Status colors for reference */
+  /* Status colors */
   --color-status-success: #00e68a;
   --color-status-warning: #ffaa00;
   --color-status-error: #ff4466;
   --color-status-info: #0080ff;
-  /* Status color alpha helpers (for backgrounds/borders) */
+  /* Status color alpha helpers */
   --color-status-error-alpha-08: color-mix(in srgb, var(--color-status-error) 8%, transparent);
   --color-status-error-alpha-20: color-mix(in srgb, var(--color-status-error) 20%, transparent);
   --color-status-error-alpha-30: color-mix(in srgb, var(--color-status-error) 30%, transparent);
@@ -45,49 +45,50 @@
   --color-status-success-alpha-20: color-mix(in srgb, var(--color-status-success) 20%, transparent);
   --color-status-warning-alpha-05: color-mix(in srgb, var(--color-status-warning) 5%, transparent);
   --color-status-warning-alpha-20: color-mix(in srgb, var(--color-status-warning) 20%, transparent);
-  /* Backgrounds */
-  --pc-bg-base: #1e1e24;
-  --pc-bg-surface: #232329;
-  --pc-bg-elevated: #27272a;
-  --pc-bg-input: #1a1a20;
-  --pc-bg-code: #1a1a20;
-  --pc-bg-sidebar: rgba(30, 30, 36, 0.95);
+  /* Backgrounds — Linear-inspired deep dark */
+  --pc-bg-base: #0a0a0f;
+  --pc-bg-surface: #111118;
+  --pc-bg-elevated: #1a1a24;
+  --pc-bg-input: #0e0e14;
+  --pc-bg-code: #0e0e14;
+  --pc-bg-sidebar: rgba(10, 10, 15, 0.96);
 
-  /* Borders */
-  --pc-border: rgba(255, 255, 255, 0.08);
-  --pc-border-strong: rgba(255, 255, 255, 0.1);
+  /* Borders — subtle translucent white */
+  --pc-border: rgba(255, 255, 255, 0.05);
+  --pc-border-strong: rgba(255, 255, 255, 0.08);
 
-  /* Text */
-  --pc-text-primary: #d4d4d8;
+  /* Text — warm off-white hierarchy */
+  --pc-text-primary: #e4e4e7;
   --pc-text-secondary: #a1a1aa;
   --pc-text-muted: #71717a;
   --pc-text-faint: #52525b;
 
-  /* Accent (cyan) */
+  /* Accent (cyan) — same as before, works well on dark */
   --pc-accent: #22d3ee;
   --pc-accent-light: #67e8f9;
-  --pc-accent-dim: rgba(34, 211, 238, 0.3);
-  --pc-accent-glow: rgba(34, 211, 238, 0.1);
+  --pc-accent-dim: rgba(34, 211, 238, 0.25);
+  --pc-accent-glow: rgba(34, 211, 238, 0.08);
   --pc-accent-rgb: 34, 211, 238;
 
   /* Hover */
-  --pc-hover: rgba(255, 255, 255, 0.05);
-  --pc-hover-strong: rgba(255, 255, 255, 0.08);
-  --pc-separator: rgba(255, 255, 255, 0.05);
+  --pc-hover: rgba(255, 255, 255, 0.04);
+  --pc-hover-strong: rgba(255, 255, 255, 0.07);
+  --pc-separator: rgba(255, 255, 255, 0.04);
 
   /* Scrollbar */
-  --pc-scrollbar-thumb: #52525b;
-  --pc-scrollbar-track: #27272a;
-  --pc-scrollbar-thumb-hover: #71717a;
+  --pc-scrollbar-thumb: #3f3f46;
+  --pc-scrollbar-track: #18181b;
+  --pc-scrollbar-thumb-hover: #52525b;
 
-  /* Fonts */
-  --pc-font-ui: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  /* Fonts — now coming from Google Fonts */
+  --pc-font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --pc-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace;
   --pc-font-size: 15px;
   --pc-font-size-mono: 14px;
 }
 
 html {
+  background-color: var(--pc-bg-base);
 }
 
 body {
@@ -100,10 +101,37 @@ body {
   margin: 0;
   overflow-x: hidden;
   max-width: 100vw;
+  overflow-y: auto;
+  overflow-wrap: break-word;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
   min-height: 100vh;
+  position: relative;
+}
+
+/* Ambient gradient glow — subtle cyan/violet vignette */
+#root::before {
+  content: '';
+  position: fixed;
+  top: -50%;
+  left: -50%;
+  width: 200%;
+  height: 200%;
+  background:
+    radial-gradient(ellipse 40% 40% at 20% 10%, rgba(34, 211, 238, 0.03) 0%, transparent 60%),
+    radial-gradient(ellipse 30% 30% at 80% 20%, rgba(99, 102, 241, 0.03) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 30% at 50% 90%, rgba(34, 211, 238, 0.02) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Ensure content stays above the glow */
+#root > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* Focus ring */
@@ -281,8 +309,8 @@ code, kbd, pre {
 .card {
   background: var(--pc-bg-surface);
   border: 1px solid var(--pc-border);
-  border-radius: 1rem;
-  transition: all 0.3s ease;
+  border-radius: 0.75rem;
+  transition: all 0.25s ease;
 }
 
 .card:hover {
@@ -294,9 +322,9 @@ code, kbd, pre {
 .glass-card {
   background: var(--pc-bg-surface);
   border: 1px solid var(--pc-border);
-  border-radius: 1rem;
-  backdrop-filter: blur(16px);
-  transition: all 0.3s ease;
+  border-radius: 0.75rem;
+  backdrop-filter: blur(20px);
+  transition: all 0.25s ease;
 }
 
 .glass-card:hover {
