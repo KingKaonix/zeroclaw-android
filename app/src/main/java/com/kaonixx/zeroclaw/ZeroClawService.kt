@@ -175,6 +175,7 @@ model = "gpt-4o-mini"
 [gateway]
 host = "127.0.0.1"
 port = $GATEWAY_PORT
+web_dist_dir = "$dataPath/web/dist"
 
 [workspace]
 # Sandboxed to app data directory
