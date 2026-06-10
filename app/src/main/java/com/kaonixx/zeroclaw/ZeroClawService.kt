@@ -92,10 +92,35 @@ class ZeroClawService : Service() {
                 val configDir = File(filesDir, CONFIG_DIR)
                 if (!configDir.exists()) configDir.mkdirs()
 
-                // Create default config if not exists
+                // Create canonical config using daemon's own tools
+                // Step 1: generate canonical config (matches daemon's internal schema exactly)
+                // Step 2: set Android-specific overrides via config set
                 val configFile = File(configDir, "config.toml")
                 if (!configFile.exists()) {
-                    configFile.writeText(generateDefaultConfig())
+                    Log.i(TAG, "Generating canonical config...")
+                    val genResult = runBinary(binary, listOf(
+                        "--config-dir", configDir.absolutePath,
+                        "config", "generate"
+                    ), filesDir)
+                    Log.i(TAG, "Config generate: ${genResult.trim().take(100)}")
+
+                    // Step 2: apply Android overrides via config set
+                    Log.i(TAG, "Applying Android config overrides...")
+                    listOf(
+                        listOf("gateway", "port", GATEWAY_PORT.toString()),
+                        listOf("gateway", "web_dist_dir", "${filesDir.absolutePath}/web/dist"),
+                        listOf("agent", "name", "SimonAI-Android"),
+                        listOf("agent", "model", "gpt-4o-mini"),
+                        listOf("agents.default", "enabled", "true"),
+                        listOf("mcp", "enabled", "true"),
+                        listOf("memory", "backend", "sqlite"),
+                    ).forEach { (section, key, value) ->
+                        runBinary(binary, listOf(
+                            "--config-dir", configDir.absolutePath,
+                            "config", "set", "$section.$key", value
+                        ), filesDir)
+                    }
+                    Log.i(TAG, "Config setup complete")
                 }
 
                 val pb = ProcessBuilder(
@@ -158,42 +183,19 @@ class ZeroClawService : Service() {
             1L
         }
     }
-    private fun generateDefaultConfig(): String {
-        val dataPath = filesDir.absolutePath
-        return """
-# SimonAI Android - Default Config
-# Edit this file to configure your agent.
-
-[agent]
-name = "SimonAI-Android"
-model = "gpt-4o-mini"
-
-[provider]
-# Set your API key in the app settings, or use the managed tier
-# api_key = "sk-..."
-
-[gateway]
-host = "127.0.0.1"
-port = $GATEWAY_PORT
-web_dist_dir = "$dataPath/web/dist"
-
-[workspace]
-# Sandboxed to app data directory
-root = "$dataPath/workspace"
-allowed_paths = ["$dataPath"]
-
-[mcp]
-enabled = true
-
-[security]
-supervised = true
-allow_shell = false
-allow_filesystem = true
-
-[memory]
-backend = "sqlite"
-path = "$dataPath/.zeroclaw/memory.db"
-        """.trimIndent()
+    private fun runBinary(binary: File, args: List<String>, workDir: File): String {
+        return try {
+            val pb = ProcessBuilder(binary.absolutePath, *args.toTypedArray())
+            pb.directory(workDir)
+            pb.redirectErrorStream(true)
+            val p = pb.start()
+            p.inputStream.bufferedReader().readText().trim().also {
+                p.waitFor()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Binary command ${args.firstOrNull()} failed: ${e.message}")
+            ""
+        }
     }
 
     private fun startNotificationUpdater() {
