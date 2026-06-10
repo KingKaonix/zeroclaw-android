@@ -5,7 +5,5 @@
             <corners android:radius="24dp" />
         </shape>
     </item>
-    <item android:drawable="@drawable/ic_logo_img" 
-          android:gravity="center"
-          android:top="-20dp" />
+    <item android:drawable="@drawable/ic_logo_img" android:gravity="center" />
 </layer-list>
