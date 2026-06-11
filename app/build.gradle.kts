@@ -43,7 +43,7 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.8"
+        kotlinCompilerExtensionVersion = "1.5.10"
     }
 
     packaging {
@@ -74,7 +74,7 @@ dependencies {
     configurations.all {
         resolutionStrategy.eachDependency {
             if (requested.group == "androidx.compose") {
-                useVersion("1.5.8")
+                useVersion("1.5.10")
             }
         }
     }

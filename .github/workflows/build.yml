@@ -101,17 +101,17 @@ jobs:
 
       - name: Build debug APK
         run: |
-          set -o pipefail
-          gradle wrapper --gradle-version 8.5 && ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle_build.log
+          gradle wrapper --gradle-version 8.5
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ./gradle_build.log | tail -50
         env:
           JAVA_HOME: /opt/java/openjdk
 
-      - name: Upload build log on failure
-        if: failure()
+      - name: Upload build log
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: gradle-build-log
-          path: /tmp/gradle_build.log
+          path: ./gradle_build.log
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
