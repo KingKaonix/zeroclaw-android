@@ -38,14 +38,20 @@ android {
         jvmTarget = "17"
     }
 
+    buildFeatures {
+        compose = true
+    }
+
+    composeOptions {
+        kotlinCompilerExtensionVersion = "1.5.8"
+    }
+
     packaging {
         jniLibs {
             useLegacyPackaging = true
         }
     }
 
-    // jniLibs/arm64-v8a/libzeroclaw.so is installed to nativeLibraryDir at install time
-    // which is the only exec-allowed path on Android 10+ (W^X policy)
     sourceSets {
         getByName("main") {
             jniLibs.srcDirs("src/main/jniLibs")
@@ -54,7 +60,48 @@ android {
 }
 
 dependencies {
-    implementation("androidx.appcompat:appcompat:1.6.1")
+    // Compose BOM
+    val composeBom = platform("androidx.compose:compose-bom:2024.01.00")
+    implementation(composeBom)
+    implementation("androidx.compose.runtime:runtime")
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-graphics")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+
+    // Force exact compose versions to prevent BOM drift
+    configurations.all {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "androidx.compose") {
+                useVersion("1.5.8")
+            }
+        }
+    }
+
+    // Activity + Lifecycle (compatible with compose 1.6.x)
+    implementation("androidx.activity:activity-compose:1.8.2")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.7.0")
+
+    // Navigation (compatible with compose 1.6.x)
+    implementation("androidx.navigation:navigation-compose:2.7.6")
+
+    // HTTP client
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+
+    // JSON
+    implementation("com.google.code.gson:gson:2.10.1")
+
+    // Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+
+    // Core (keep)
     implementation("androidx.core:core-ktx:1.12.0")
-    implementation("androidx.webkit:webkit:1.10.0")
+    implementation("androidx.appcompat:appcompat:1.6.1")
+
+    // Debug tooling
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
