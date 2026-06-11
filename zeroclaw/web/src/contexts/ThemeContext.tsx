@@ -40,10 +40,10 @@ export interface ThemeContextValue {
   setMonoFontSize: (size: number) => void;
 }
 
-export const ThemeContext = createContext<ThemeContextValue>({
-  theme: 'dark',
+export const defaultThemeValue: ThemeContextValue = {
+  theme: 'dark' as ThemeMode,
   accent: 'cyan',
-  colorTheme: 'default-dark',
+  colorTheme: 'simon-aurora',
   uiFont: 'system',
   monoFont: 'jetbrains',
   uiFontSize: 15,
@@ -56,7 +56,9 @@ export const ThemeContext = createContext<ThemeContextValue>({
   setMonoFont: () => {},
   setUiFontSize: () => {},
   setMonoFontSize: () => {},
-});
+};
+
+export const ThemeContext = createContext<ThemeContextValue>(defaultThemeValue);
 
 // ── Font loader (was fontLoader.ts) ──────────────────────────────────────────
 

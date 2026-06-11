@@ -12,7 +12,8 @@ export type ColorThemeId =
   | 'cobalt2'
   | 'flexoki-dark' | 'flexoki-light'
   | 'hacker-green'
-  | 'material-dark' | 'material-light';
+  | 'material-dark' | 'material-light'
+  | 'simon-aurora';
 
 export interface ColorThemeDef {
   id: ColorThemeId;
@@ -27,5 +28,5 @@ export const colorThemes: ColorThemeDef[] = themesData as unknown as ColorThemeD
 export const colorThemeMap: Record<ColorThemeId, ColorThemeDef> =
   Object.fromEntries(colorThemes.map(t => [t.id, t])) as Record<ColorThemeId, ColorThemeDef>;
 
-export const DEFAULT_DARK_THEME: ColorThemeId = 'default-dark';
+export const DEFAULT_DARK_THEME: ColorThemeId = 'simon-aurora';
 export const DEFAULT_LIGHT_THEME: ColorThemeId = 'default-light';

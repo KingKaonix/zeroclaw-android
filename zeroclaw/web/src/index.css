@@ -86,6 +86,78 @@ html, body, #root {
   max-width: 100vw;
 }
 
+/* ===================== DROPDOWN & SELECT MODERNIZATION ===================== */
+
+/* Native select — dark glass input with neon accent border */
+select, select.input-electric, select.appearance-none {
+  background-color: #1e1f2e !important;
+  color: #e2e8f0 !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  border-radius: 12px !important;
+  padding: 10px 36px 10px 14px !important;
+  font-size: 0.875rem !important;
+  line-height: 1.4 !important;
+  appearance: none !important;
+  -webkit-appearance: none !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 12px center !important;
+  background-size: 14px !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+select:focus, select.input-electric:focus, select.appearance-none:focus {
+  border-color: #22d3ee !important;
+  box-shadow: 0 0 0 3px rgba(34,211,238,0.15) !important;
+  outline: none !important;
+}
+
+/* Option styling (WebView support varies — use background/color) */
+select option,
+select.input-electric option,
+select.appearance-none option {
+  background-color: #1a1c2c !important;
+  color: #e2e8f0 !important;
+  padding: 8px 12px !important;
+}
+
+/* Custom dropdown menu (div-based, used in Header, AgentChat, etc.) */
+[role="listbox"], [role="menu"],
+.dropdown-menu, .dropdown-content,
+div[class*="dropdown"], div[class*="menu"]:not(.hologram-card) {
+  background: rgba(26, 28, 44, 0.96) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255,255,255,0.08) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.5), 0 0 0 1px rgba(34,211,238,0.08) !important;
+  padding: 6px !important;
+  z-index: 999 !important;
+}
+
+/* Dropdown items */
+[role="listbox"] > *, [role="menu"] > *,
+.dropdown-menu > *, .dropdown-content > *,
+div[class*="dropdown"] > *, div[class*="menu"] > * {
+  border-radius: 10px !important;
+  padding: 8px 14px !important;
+  color: #e2e8f0 !important;
+  transition: background 0.15s ease !important;
+  cursor: pointer !important;
+}
+[role="listbox"] > *:hover, [role="menu"] > *:hover,
+.dropdown-menu > *:hover, .dropdown-content > *:hover,
+div[class*="dropdown"] > *:hover, div[class*="menu"] > *:hover {
+  background: rgba(34, 211, 238, 0.1) !important;
+}
+[role="listbox"] > *[aria-selected="true"], [role="menu"] > *[aria-selected="true"],
+.dropdown-menu > .active, .dropdown-content > .active {
+  background: rgba(34, 211, 238, 0.15) !important;
+  color: #22d3ee !important;
+}
+
+/* ===================== END DROPDOWN ===================== */
+
 /* Custom scrollbar for dark glass panels */
 ::-webkit-scrollbar {
   width: 4px;

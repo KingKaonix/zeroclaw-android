@@ -54,16 +54,13 @@ export default function Layout() {
         <ReloadBanner />
         <UnsavedChangesBanner />
 
-        {/* Page content — ErrorBoundary keyed by the first path segment
-            so the boundary resets when the user navigates between pages
-            (e.g. /agent → /config), but stays mounted across param-only
-            changes within a page (e.g. /config/providers → /config/browser).
-            Keying on the full pathname remounted the entire route tree
-            on every section click and reset scroll/state. */}
-        <main className="flex-1 overflow-y-auto min-h-0">
-          <ErrorBoundary key={pathname.split('/')[1] ?? ''}>
-            <Outlet />
-          </ErrorBoundary>
+        {/* Page content — wallet-card glass container over aurora backdrop */}
+        <main className="flex-1 overflow-y-auto min-h-0 p-4 md:p-6 bg-aurora overflow-x-hidden">
+          <div className="hologram-card rounded-2xl p-5 md:p-6 min-h-full">
+            <ErrorBoundary key={pathname.split('/')[1] ?? ''}>
+              <Outlet />
+            </ErrorBoundary>
+          </div>
         </main>
       </div>
     </div>
