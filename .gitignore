@@ -31,3 +31,4 @@ docs/index.html
 
 # Git submodule (tracked via .gitmodules, not directly)
 zeroclaw/
+guitarix/guitarix
