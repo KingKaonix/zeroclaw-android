@@ -8,6 +8,7 @@ import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -21,15 +22,11 @@ import com.kaonixx.zeroclaw.theme.*
 import com.kaonixx.zeroclaw.ui.AppShell
 import kotlinx.coroutines.delay
 
+private enum class UiState { Loading, DaemonError, Ready }
+
 class MainActivity : AppCompatActivity() {
 
     private val NOTIF_PERM_CODE = 100
-
-    private sealed class UiState {
-        object Loading : UiState()
-        object DaemonError : UiState()
-        data class Ready(val isPaired: Boolean) : UiState()
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -39,34 +36,37 @@ class MainActivity : AppCompatActivity() {
 
         setContent {
             ZeroClawTheme {
-                var state by remember { mutableStateOf<UiState>(UiState.Loading) }
+                var uiState by remember { mutableStateOf(UiState.Loading) }
+                var isPaired by remember { mutableStateOf(false) }
                 var retryTrigger by remember { mutableStateOf(0) }
 
                 LaunchedEffect(retryTrigger) {
-                    state = UiState.Loading
+                    uiState = UiState.Loading
                     val ready = pollDaemon()
                     if (ready) {
                         try {
                             val status = ApiClient.getStatus()
-                            state = UiState.Ready(isPaired = status.paired)
+                            isPaired = status.paired
+                            uiState = UiState.Ready
                         } catch (_: Exception) {
-                            state = UiState.DaemonError
+                            uiState = UiState.DaemonError
                         }
                     } else {
-                        state = UiState.DaemonError
+                        uiState = UiState.DaemonError
                     }
                 }
 
-                when (val s = state) {
-                    is UiState.Loading -> LoadingScreen()
-                    is UiState.DaemonError -> DaemonErrorScreen(onRetry = { retryTrigger++ })
-                    is UiState.Ready -> AppShell(
+                when (uiState) {
+                    UiState.Loading -> LoadingScreen()
+                    UiState.DaemonError -> DaemonErrorScreen(onRetry = { retryTrigger++ })
+                    UiState.Ready -> AppShell(
                         context = this@MainActivity,
-                        isPaired = s.isPaired,
+                        isPaired = isPaired,
                         onPair = { code ->
                             val response = ApiClient.pair(code)
                             if (response.success) {
                                 ApiClient.setToken(response.token)
+                                isPaired = true
                             } else {
                                 throw Exception("Pairing rejected by daemon")
                             }
@@ -97,14 +97,10 @@ class MainActivity : AppCompatActivity() {
             try {
                 ApiClient.getStatus()
                 return true
-            } catch (_: Exception) {
-                // daemon not ready yet
-            }
+            } catch (_: Exception) { }
         }
         return false
     }
-
-    // Back navigation handled by NavController via OnBackPressedDispatcher
 
     @Composable
     private fun LoadingScreen() {
