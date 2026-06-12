@@ -97,6 +97,13 @@ object ApiClient {
 
     // Quickstart
     suspend fun getQuickstartState() = get<QuickstartState>("/quickstart/state")
+    suspend fun getQuickstartFields() = get<List<QuickstartField>>("/quickstart/fields")
+    suspend fun applyQuickstart(req: QuickstartApplyRequest): QuickstartApplyResponse =
+        post("/quickstart/apply", req)
+    suspend fun dismissQuickstart(): QuickstartApplyResponse =
+        post("/quickstart/dismiss")
+    suspend fun reloadDaemon(): String =
+        post("/admin/reload")
 
     // Health
     suspend fun getHealth() = get<HealthSnapshot>("/health")

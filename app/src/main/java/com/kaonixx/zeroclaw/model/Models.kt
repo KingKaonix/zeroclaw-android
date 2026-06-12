@@ -168,3 +168,50 @@ data class QuickstartState(
     @SerializedName("quickstart_completed") val quickstartCompleted: Boolean = false,
     val agents: List<AgentInfo> = emptyList()
 )
+
+
+
+data class QuickstartField(
+    val key: String = "",
+    val label: String = "",
+    val type: String = "text",
+    val required: Boolean = false,
+    val placeholder: String? = null,
+    val options: List<QuickstartFieldOption>? = null
+)
+
+data class QuickstartFieldOption(
+    val value: String = "",
+    val label: String = ""
+)
+
+data class QuickstartApplyRequest(
+    @SerializedName("model_provider") val modelProvider: String,
+    val model: String,
+    @SerializedName("api_key") val apiKey: String? = null,
+    val agent: String = "default"
+)
+
+data class QuickstartApplyResponse(
+    val success: Boolean = false,
+    val message: String? = null
+)
+
+data class ProviderModel(
+    val id: String = "",
+    val name: String = ""
+)
+
+enum class DaemonStartStep {
+    ExtractingBinary,
+    StartingDaemon,
+    WaitingForGateway,
+    DaemonReady,
+    Failed
+}
+
+data class DaemonStartProgress(
+    val step: DaemonStartStep = DaemonStartStep.ExtractingBinary,
+    val message: String = "",
+    val progress: Float = 0f
+)

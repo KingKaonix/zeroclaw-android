@@ -15,6 +15,7 @@ sealed class Screen(val route: String, val label: String) {
     data object Doctor : Screen("doctor", "Doctor")
     data object Canvas : Screen("canvas", "Canvas")
     data object Quickstart : Screen("quickstart", "Quickstart")
+    data object Onboarding : Screen("onboarding", "Setup")
 
     companion object {
         val navItems = listOf(

@@ -7,6 +7,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.kaonixx.zeroclaw.ui.*
+import com.kaonixx.zeroclaw.ui.screens.OnboardingScreen
 
 @Composable
 fun NavGraph(navController: NavHostController, isPaired: Boolean, onPair: suspend (String) -> Unit) {
@@ -93,6 +94,14 @@ fun NavGraph(navController: NavHostController, isPaired: Boolean, onPair: suspen
 
         composable(Screen.Quickstart.route) {
             QuickstartScreen()
+        }
+
+        composable(Screen.Onboarding.route) {
+            OnboardingScreen(onComplete = {
+                navController.navigate(Screen.Dashboard.route) {
+                    popUpTo(Screen.Onboarding.route) { inclusive = true }
+                }
+            })
         }
     }
 }

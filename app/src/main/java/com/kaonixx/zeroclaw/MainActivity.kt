@@ -5,25 +5,34 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import androidx.activity.compose.setContent
+import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.kaonixx.zeroclaw.api.ApiClient
+import com.kaonixx.zeroclaw.model.DaemonStartProgress
+import com.kaonixx.zeroclaw.model.DaemonStartStep
 import com.kaonixx.zeroclaw.theme.*
 import com.kaonixx.zeroclaw.ui.AppShell
+import com.kaonixx.zeroclaw.ui.screens.OnboardingScreen
 import kotlinx.coroutines.delay
-import android.net.Uri
+import kotlinx.coroutines.launch
 
-private enum class UiState { Loading, DaemonError, Ready }
+private enum class AppUiState { StartingDaemon, DaemonError, Onboarding, Ready }
 
 class MainActivity : AppCompatActivity() {
     companion object {
@@ -35,36 +44,99 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         requestNotificationPermission()
         startService(Intent(this, ZeroClawService::class.java))
 
         setContent {
             ZeroClawTheme {
-                var uiState by remember { mutableStateOf(UiState.Loading) }
+                var appState by remember { mutableStateOf(AppUiState.StartingDaemon) }
                 var isPaired by remember { mutableStateOf(false) }
                 var retryTrigger by remember { mutableStateOf(0) }
+                var progress by remember { mutableStateOf(DaemonStartProgress()) }
+                val scope = rememberCoroutineScope()
 
+                // Poll for daemon with progress tracking
                 LaunchedEffect(retryTrigger) {
-                    uiState = UiState.Loading
-                    val ready = pollDaemon()
+                    appState = AppUiState.StartingDaemon
+                    progress = DaemonStartProgress(
+                        step = DaemonStartStep.ExtractingBinary,
+                        message = "Preparing agent binary...",
+                        progress = 0.1f
+                    )
+
+                    // Simulate startup steps
+                    delay(800)
+                    progress = DaemonStartProgress(
+                        step = DaemonStartStep.StartingDaemon,
+                        message = "Starting SimonAI daemon...",
+                        progress = 0.3f
+                    )
+
+                    val ready = pollDaemon(progressUpdater = { p, msg ->
+                        progress = DaemonStartProgress(
+                            step = DaemonStartStep.WaitingForGateway,
+                            message = msg,
+                            progress = p
+                        )
+                    })
+
                     if (ready) {
+                        progress = DaemonStartProgress(
+                            step = DaemonStartStep.DaemonReady,
+                            message = "Daemon connected!",
+                            progress = 1f
+                        )
+                        delay(300)
+
+                        // Check if onboarding is needed
                         try {
-                            val status = ApiClient.getStatus()
-                            isPaired = status.paired
-                            uiState = UiState.Ready
+                            val qs = ApiClient.getQuickstartState()
+                            if (qs.quickstartCompleted) {
+                                val status = ApiClient.getStatus()
+                                isPaired = status.paired
+                                appState = AppUiState.Ready
+                            } else {
+                                appState = AppUiState.Onboarding
+                            }
                         } catch (_: Exception) {
-                            uiState = UiState.DaemonError
+                            // Can't determine quickstart state — go to main app
+                            try {
+                                val status = ApiClient.getStatus()
+                                isPaired = status.paired
+                            } catch (_: Exception) {}
+                            appState = AppUiState.Ready
                         }
                     } else {
-                        uiState = UiState.DaemonError
+                        progress = DaemonStartProgress(
+                            step = DaemonStartStep.Failed,
+                            message = "Could not connect to daemon",
+                            progress = 0f
+                        )
+                        appState = AppUiState.DaemonError
                     }
                 }
 
-                when (uiState) {
-                    UiState.Loading -> LoadingScreen()
-                    UiState.DaemonError -> DaemonErrorScreen(onRetry = { retryTrigger++ })
-                    UiState.Ready -> AppShell(
+                when (appState) {
+                    AppUiState.StartingDaemon -> StartupScreen(progress)
+                    AppUiState.DaemonError -> DaemonErrorScreen(
+                        onRetry = { retryTrigger++ },
+                        progress = progress
+                    )
+                    AppUiState.Onboarding -> OnboardingScreen(
+                        onComplete = {
+                            // After onboarding, reload daemon and go to app
+                            scope.launch {
+                                try {
+                                    ApiClient.reloadDaemon()
+                                    delay(1000)
+                                    val status = ApiClient.getStatus()
+                                    isPaired = status.paired
+                                } catch (_: Exception) {}
+                                appState = AppUiState.Ready
+                            }
+                        }
+                    )
+                    AppUiState.Ready -> AppShell(
                         context = this@MainActivity,
                         isPaired = isPaired,
                         onPair = { code ->
@@ -96,9 +168,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private suspend fun pollDaemon(): Boolean {
-        repeat(20) {
-            delay(1500)
+    private suspend fun pollDaemon(progressUpdater: (Float, String) -> Unit): Boolean {
+        repeat(30) { i ->
+            val p = 0.3f + (i.toFloat() / 30f) * 0.65f
+            val msgs = listOf(
+                "Connecting to gateway...",
+                "Establishing API connection...",
+                "Waiting for daemon response...",
+                "Almost there..."
+            )
+            progressUpdater(p, msgs.getOrElse(i / 8) { "Connecting... (${i + 1}/30)" })
+            delay(1000)
             try {
                 ApiClient.getStatus()
                 return true
@@ -108,36 +188,113 @@ class MainActivity : AppCompatActivity() {
     }
 
     @Composable
-    private fun LoadingScreen() {
+    private fun StartupScreen(progress: DaemonStartProgress) {
         Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(
-                    color = CyanAccent,
-                    strokeWidth = 3.dp
-                )
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    "Starting SimonAI\u2026",
-                    color = TextMuted,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        }
-    }
-
-    @Composable
-    private fun DaemonErrorScreen(onRetry: () -> Unit) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().background(SurfaceBase),
             contentAlignment = Alignment.Center
         ) {
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.padding(32.dp)
             ) {
+                // Logo
+                Surface(
+                    modifier = Modifier.size(72.dp),
+                    shape = RoundedCornerShape(20.dp),
+                    color = CyanAccentGlow
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            "S",
+                            style = MaterialTheme.typography.headlineLarge,
+                            color = CyanAccent,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(24.dp))
+
+                Text(
+                    "SimonAI",
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                Text(
+                    progress.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextMuted
+                )
+
+                Spacer(Modifier.height(24.dp))
+
+                // Progress bar
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp))
+                        .background(SurfaceElevated)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(progress.progress)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(
+                                if (progress.step == DaemonStartStep.Failed) RoseAccent
+                                else CyanAccent
+                            )
+                    )
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // Percentage + step label
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "${(progress.progress * 100).toInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (progress.step == DaemonStartStep.Failed) RoseAccent
+                                else CyanAccent,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        progress.step.name,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextMuted,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+        }
+    }
+
+    @Composable
+    private fun DaemonErrorScreen(
+        onRetry: () -> Unit,
+        progress: DaemonStartProgress
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize().background(SurfaceBase),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(32.dp)
+            ) {
+                Text(
+                    "⚠️",
+                    fontSize = 48.sp
+                )
+                Spacer(Modifier.height(16.dp))
                 Text(
                     "Could not connect",
                     style = MaterialTheme.typography.headlineSmall,
@@ -146,8 +303,8 @@ class MainActivity : AppCompatActivity() {
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "The agent service did not start in time.\n" +
-                    "Check device logs or restart the app.",
+                    "The agent daemon didn't start in time.\n" +
+                    "This can happen on first install or after updates.",
                     color = TextMuted,
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodyMedium
@@ -155,9 +312,10 @@ class MainActivity : AppCompatActivity() {
                 Spacer(Modifier.height(24.dp))
                 Button(
                     onClick = onRetry,
-                    colors = ButtonDefaults.buttonColors(containerColor = CyanAccent)
+                    colors = ButtonDefaults.buttonColors(containerColor = CyanAccent),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Retry", color = DeepCharcoal)
+                    Text("Retry", color = DeepCharcoal, fontWeight = FontWeight.SemiBold)
                 }
             }
         }
