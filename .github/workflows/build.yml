@@ -103,7 +103,7 @@ jobs:
         run: |
           gradle wrapper --gradle-version 8.5
           set -o pipefail
-          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ./gradle_build.log | tail -50
+          ./gradlew clean assembleDebug --no-daemon --stacktrace 2>&1 | tee ./gradle_build.log | tail -50
 
       - name: Upload build log
         if: always()
