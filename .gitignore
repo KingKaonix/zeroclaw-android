@@ -1,34 +1,30 @@
-# Gradle
-.gradle/
-build/
-app/build/
-local.properties
-
-# IDE
-.idea/
-*.iml
-.vscode/
-*.swp
-*.swo
-
-# Rust build artifacts
-target/
-**/target/
-
-# OS
-.DS_Store
-Thumbs.db
 
 # CI local test artifacts
-*.log
-apk/
-
 # Committed build artifacts
-binary/
-native/
-landing.html
-docs/index.html
-
 # Git submodule (tracked via .gitmodules, not directly)
-zeroclaw/
+# Gradle
+# IDE
+# OS
+# Rust build artifacts
+**/target/
+*.iml
+*.log
+*.swo
+*.swp
+.DS_Store
+.gradle/
+.idea/
+.vscode/
+Thumbs.db
+apk/
+app/build/
+binary/
+build/
+docs/index.html
+guitarix
 guitarix/guitarix
+landing.html
+local.properties
+native/
+target/
+zeroclaw/
