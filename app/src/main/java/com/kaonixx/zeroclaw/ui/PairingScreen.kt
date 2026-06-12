@@ -24,7 +24,7 @@ import com.kaonixx.zeroclaw.theme.*
 import kotlinx.coroutines.launch
 
 @Composable
-fun PairingScreen(onPair: (String) -> Unit) {
+fun PairingScreen(onPair: suspend (String) -> Unit) {
     var code by remember { mutableStateOf("") }
     var displayCode by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -78,7 +78,7 @@ fun PairingScreen(onPair: (String) -> Unit) {
             Spacer(Modifier.height(4.dp))
 
             Text(
-                if (displayCode != null) "Your pairing code — ready to connect"
+                if (displayCode != null) "Your pairing code \u2014 ready to connect"
                 else "Enter the 6-digit code from your terminal",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextMuted
@@ -142,6 +142,7 @@ fun PairingScreen(onPair: (String) -> Unit) {
                             scope.launch {
                                 try {
                                     onPair(code)
+                                    loading = false
                                 } catch (e: Exception) {
                                     error = e.message ?: "Pairing failed"
                                     loading = false
@@ -164,7 +165,7 @@ fun PairingScreen(onPair: (String) -> Unit) {
                 onClick = {
                     loading = true
                     scope.launch {
-                        try { onPair(code) }
+                        try { onPair(code); loading = false }
                         catch (e: Exception) { error = e.message ?: "Pairing failed"; loading = false }
                     }
                 },

@@ -7,6 +7,7 @@ import java.security.KeyFactory
 import java.security.PublicKey
 import java.security.Signature
 import java.security.spec.X509EncodedKeySpec
+import org.bouncycastle.jce.provider.BouncyCastleProvider
 
 /**
  * License validation for ZeroClaw Android.
@@ -69,10 +70,23 @@ object LicenseValidator {
         return try {
             val keyBytes = Base64.decode(PUBLIC_KEY_B64, Base64.DEFAULT)
             val keySpec = X509EncodedKeySpec(keyBytes)
-            val keyFactory = KeyFactory.getInstance("Ed25519")
-            val publicKey: PublicKey = keyFactory.generatePublic(keySpec)
 
-            val sig = Signature.getInstance("Ed25519")
+            val (keyFactory, sig) = try {
+                // Native Ed25519 (Android 13+, API 33+)
+                Pair(
+                    KeyFactory.getInstance("Ed25519"),
+                    Signature.getInstance("Ed25519")
+                )
+            } catch (_: java.security.NoSuchAlgorithmException) {
+                // Fallback to BouncyCastle for older devices
+                java.security.Security.addProvider(BouncyCastleProvider())
+                Pair(
+                    KeyFactory.getInstance("Ed25519", "BC"),
+                    Signature.getInstance("Ed25519", "BC")
+                )
+            }
+
+            val publicKey: PublicKey = keyFactory.generatePublic(keySpec)
             sig.initVerify(publicKey)
             sig.update(message.toByteArray(Charsets.UTF_8))
             sig.verify(Base64.decode(signatureB64, Base64.DEFAULT))

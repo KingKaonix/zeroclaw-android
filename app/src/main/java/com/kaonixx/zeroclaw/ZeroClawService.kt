@@ -7,6 +7,7 @@ import android.content.pm.PackageInfo
 import android.os.Build
 import android.util.Log
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
@@ -156,18 +157,28 @@ class ZeroClawService : Service() {
     }
 
     private fun extractBinary(): File? {
-        // On Android 10+ W^X policy blocks exec() from any writable app directory.
-        // The only directory Android allows executing native code from is the
-        // app's nativeLibraryDir — which is populated automatically from .so
-        // files in src/main/jniLibs/arm64-v8a/ at install time.
-        // We ship the binary as libzeroclaw.so in jniLibs and exec it directly.
         val nativeLib = File(applicationInfo.nativeLibraryDir, "libzeroclaw.so")
-        if (nativeLib.exists()) {
-            Log.i(TAG, "Using native library at ${nativeLib.absolutePath}")
-            return nativeLib
+        if (!nativeLib.exists()) {
+            Log.e(TAG, "Native library not found at ${nativeLib.absolutePath}")
+            return null
         }
-        Log.e(TAG, "Native library not found at ${nativeLib.absolutePath}")
-        return null
+        Log.i(TAG, "Found native library at ${nativeLib.absolutePath}")
+
+        // Android 10+ W^X may block exec() from nativeLibraryDir.
+        // Copy to a cached location with explicit exec permission as fallback.
+        val cached = File(cacheDir, "libzeroclaw.exec")
+        if (!cached.exists() || cached.lastModified() < nativeLib.lastModified()) {
+            try {
+                nativeLib.copyTo(cached, overwrite = true)
+                cached.setExecutable(true)
+                Log.i(TAG, "Prepared executable at ${cached.absolutePath}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to prepare cached executable", e)
+                // Fall back to direct exec if copy fails
+                return nativeLib
+            }
+        }
+        return cached
     }
 
     private fun getAppVersionCode(): Long {

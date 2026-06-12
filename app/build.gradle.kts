@@ -85,6 +85,9 @@ dependencies {
     // JSON
     implementation("com.google.code.gson:gson:2.10.1")
 
+    // BouncyCastle (Ed25519 fallback for pre-API-33)
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.77")
+
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
 

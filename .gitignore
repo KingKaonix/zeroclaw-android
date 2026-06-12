@@ -22,3 +22,12 @@ Thumbs.db
 # CI local test artifacts
 *.log
 apk/
+
+# Committed build artifacts
+binary/
+native/
+landing.html
+docs/index.html
+
+# Git submodule (tracked via .gitmodules, not directly)
+zeroclaw/

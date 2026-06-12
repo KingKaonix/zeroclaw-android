@@ -9,7 +9,7 @@ import androidx.navigation.navArgument
 import com.kaonixx.zeroclaw.ui.*
 
 @Composable
-fun NavGraph(navController: NavHostController, isPaired: Boolean, onPair: (String) -> Unit) {
+fun NavGraph(navController: NavHostController, isPaired: Boolean, onPair: suspend (String) -> Unit) {
     NavHost(
         navController = navController,
         startDestination = if (isPaired) Screen.Dashboard.route else Screen.Pairing.route

@@ -2,14 +2,13 @@
 
 ## Overview
 
-ZeroClaw Android = zeroclaw Rust binary (cross-compiled to ARM64) + thin Android wrapper. The Rust binary does all the real work. Android just keeps it alive and shows its web UI.
+ZeroClaw Android = zeroclaw Rust binary (cross-compiled to ARM64) + thin Android wrapper. The Rust binary does all the real work. Android keeps it alive and provides a native Compose UI.
 
 ## Layers
 
-### Layer 1: Rust Runtime (libzeroclaw_core.so)
+### Layer 1: Rust Runtime (libzeroclaw_core)
 
 The zeroclaw binary, compiled for `aarch64-linux-android` with features:
-
 - `agent-runtime` — core agent loop
 - `gateway` — HTTP/WS server (dashboard + API)
 - `memory-sqlite` — SQLite with vector search
@@ -17,9 +16,11 @@ The zeroclaw binary, compiled for `aarch64-linux-android` with features:
 - `tool-http` — HTTP fetch tool
 - `channel-telegram`, `channel-discord`, `channel-webhook` — channel adapters
 
-Runs as a subprocess spawned by the Android service, not via JNI (simpler, more stable).
+Runs as a **subprocess** spawned by the Android foreground service.
 
-**Why subprocess not JNI:** JNI crashes in Rust kill the entire app. A subprocess crash just restarts the service. JNI also adds build complexity (crate type = cdylib, JNI function naming, JNI env pointer passing). Subprocess = just a binary + stdin/stdout.
+**Why subprocess not JNI:** JNI crashes in Rust kill the entire app. A subprocess crash just restarts the service. Subprocess = just a binary + stdin/stdout, no JNI naming conventions or env pointer management.
+
+The binary is shipped as `libzeroclaw.so` in `jniLibs/arm64-v8a/` (disguised as a native library for APK packaging), extracted to the app's `nativeLibraryDir` at install time, then copied to `cacheDir` with explicit exec permission for reliable execution across Android versions.
 
 ### Layer 2: Android Foreground Service (ZeroClawService.kt)
 
@@ -29,83 +30,83 @@ class ZeroClawService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startForeground(NOTIFICATION_ID, buildNotification())
-        startZeroClawProcess()
+        startAgent()
         return START_STICKY
     }
 
-    private fun startZeroClawProcess() {
-        val binary = extractBinaryFromAssets()  // Copy libzeroclaw.so to data dir
-        val configDir = Files.createDirectories(dataDir.resolve(".zeroclaw"))
-
+    private fun startAgent() {
+        val binary = extractBinary()  // from nativeLibraryDir or cached copy
         val pb = ProcessBuilder(
             binary.absolutePath,
             "--config-dir", configDir.absolutePath,
-            "--gateway", "127.0.0.1:18789"
+            "daemon", "-p", GATEWAY_PORT.toString()
         )
         process = pb.start()
     }
 }
 ```
 
-### Layer 3: WebView Dashboard
+### Layer 3: Compose Native UI
 
-ZeroClaw's built-in web UI runs on `http://127.0.0.1:18789`. The Android app wraps it in a WebView:
+ZeroClaw's REST API runs on `http://127.0.0.1:18789`. The Android app uses a Jetpack Compose UI that talks to this API via `ApiClient`:
 
 ```kotlin
 class MainActivity : AppCompatActivity() {
-    private lateinit var webView: WebView
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        webView = WebView(this)
-        webView.settings.javaScriptEnabled = true
-        webView.settings.domStorageEnabled = true
-        webView.loadUrl("http://127.0.0.1:18789")
-        setContentView(webView)
+        startService(Intent(this, ZeroClawService::class.java))
+        setContent {
+            ZeroClawTheme {
+                when (state) {
+                    is Loading -> LoadingScreen()
+                    is DaemonError -> DaemonErrorScreen(onRetry = ...)
+                    is Ready -> AppShell(isPaired, onPair = ...)
+                }
+            }
+        }
     }
 }
 ```
 
 ### Layer 4: Licensing (LicenseValidator.kt)
 
-Optional phone-home licensing using Cloudflare Workers + Stripe webhooks:
+Offline license verification using ed25519 signatures:
+1. On launch, check cached license + signature in SharedPreferences
+2. Verify signature against baked-in ed25519 public key
+3. Support: native Ed25519 (Android 13+) with BouncyCastle fallback (older devices)
+4. If invalid → Free tier with watermark
 
-1. On launch, check local JWT (cached in SharedPreferences)
-2. If JWT missing or expiring, call `api.zeroclaw.app/verify`
-3. Server verifies against Stripe/LemonSqueezy subscription status
-4. Returns signed JWT with expiry
-5. App verifies JWT signature with baked-in ed25519 public key
-6. If invalid → degrade to Free tier
-
-**Offline grace period:** 7 days. App re-checks every 7 days. If no network, last valid JWT counts.
+**Offline grace period:** Keys can include an expiry timestamp. 0 = never expires.
 
 ## Data Flow
 
 ```
-User types message → WebView → ZeroClaw Gateway (localhost:18789)
+User types message → Compose UI → ApiClient → ZeroClaw Gateway (localhost:18789)
   → zeroclaw runtime → LLM provider (user's key) → Response
-  → Gateway → WebView → User sees response
+  → Gateway → ApiClient → Compose UI → User sees response
 ```
 
 Channel messages (Telegram/Discord/etc):
 ```
 Telegram message → ZeroClaw Channel adapter
   → zeroclaw runtime processes → Responds via channel API
-  → Notification on phone (from Android NotificationListener)
+  → Notification on phone
 ```
 
 ## Filesystem Layout on Device
 
 ```
 /data/data/com.kaonixx.zeroclaw/
+├── cache/
+│   └── libzeroclaw.exec        # Executable copy of the binary
 ├── files/
-│   └── libzeroclaw.so          # Extracted from APK assets
-├── .zeroclaw/
-│   ├── config.toml             # User's config (editable in-app)
-│   ├── memory.db               # SQLite vector database
-│   └── receipts/               # Tool call audit logs
+│   └── .zeroclaw/
+│       ├── config.toml         # User's config (editable in-app)
+│       ├── memory.db           # SQLite vector database
+│       └── receipts/           # Tool call audit logs
 └── shared_prefs/
-    └── license.xml             # Cached license JWT
+    ├── zeroclaw_license.xml    # License key + signature cache
+    └── ...                     # Other prefs
 ```
 
 ## Sandboxing
@@ -114,7 +115,6 @@ Telegram message → ZeroClaw Channel adapter
 - **Shell commands:** Denied by default. User can whitelist specific commands in config
 - **Network:** Full (channels need HTTP/WS)
 - **Filesystem:** Android's SELinux + per-process UID provides hardware-level isolation
-- **Extra (optional):** `android:isolatedProcess=true` in manifest for the service
 
 ## Battery
 

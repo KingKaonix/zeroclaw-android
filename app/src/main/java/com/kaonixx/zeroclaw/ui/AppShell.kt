@@ -1,5 +1,6 @@
 package com.kaonixx.zeroclaw.ui
 
+import android.content.Context
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -13,7 +14,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -47,7 +47,7 @@ val moreItems = listOf(
 )
 
 @Composable
-fun AppShell(isPaired: Boolean, onPair: (String) -> Unit) {
+fun AppShell(context: Context, isPaired: Boolean, onPair: suspend (String) -> Unit) {
     val navController = rememberNavController()
     var showMore by remember { mutableStateOf(false) }
 
