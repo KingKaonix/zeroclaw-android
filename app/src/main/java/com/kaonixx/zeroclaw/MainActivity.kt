@@ -21,10 +21,15 @@ import com.kaonixx.zeroclaw.api.ApiClient
 import com.kaonixx.zeroclaw.theme.*
 import com.kaonixx.zeroclaw.ui.AppShell
 import kotlinx.coroutines.delay
+import android.net.Uri
 
 private enum class UiState { Loading, DaemonError, Ready }
 
 class MainActivity : AppCompatActivity() {
+    companion object {
+        const val GUMROAD_URL = "https://mulikjo.gumroad.com/l/zeroclaw-android"
+        const val LICENSE_SERVER_URL = "https://zeroclaw-license.joemulik.workers.dev"
+    }
 
     private val NOTIF_PERM_CODE = 100
 

@@ -19,6 +19,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.BorderStroke
+import android.content.Intent
+import android.net.Uri
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -27,6 +29,7 @@ import androidx.navigation.compose.rememberNavController
 import com.kaonixx.zeroclaw.navigation.NavGraph
 import com.kaonixx.zeroclaw.navigation.Screen
 import com.kaonixx.zeroclaw.theme.*
+import com.kaonixx.zeroclaw.LicenseValidator
 
 data class NavItem(val screen: Screen, val icon: ImageVector, val label: String)
 
@@ -147,6 +150,41 @@ fun AppShell(context: Context, isPaired: Boolean, onPair: suspend (String) -> Un
                             }
                         }
                         Spacer(Modifier.height(16.dp))
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                HorizontalDivider(color = BorderDim, thickness = 0.5.dp)
+                Spacer(Modifier.height(12.dp))
+                val isPro = LicenseValidator.isPro(context)
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (isPro) "SimonAI Pro" else "SimonAI Free",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextPrimary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            if (isPro) "Licensed" else "Watermark active",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextMuted
+                        )
+                    }
+                    if (!isPro) {
+                        Button(
+                            onClick = {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://mulikjo.gumroad.com/l/zeroclaw-android"))
+                                context.startActivity(intent)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = CyanAccent),
+                            modifier = Modifier.height(32.dp),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Get Pro", color = DeepCharcoal, style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
             }
