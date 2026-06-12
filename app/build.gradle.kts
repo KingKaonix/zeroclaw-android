@@ -43,7 +43,7 @@ android {
     }
 
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.10"
+        kotlinCompilerExtensionVersion = "1.5.8"
     }
 
     packaging {
@@ -69,15 +69,6 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
-
-    // Force exact compose versions to prevent BOM drift
-    configurations.all {
-        resolutionStrategy.eachDependency {
-            if (requested.group == "androidx.compose") {
-                useVersion("1.5.10")
-            }
-        }
-    }
 
     // Activity + Lifecycle (compatible with compose 1.6.x)
     implementation("androidx.activity:activity-compose:1.8.2")
