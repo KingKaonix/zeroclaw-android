@@ -103,8 +103,6 @@ jobs:
         run: |
           gradle wrapper --gradle-version 8.5
           ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee ./gradle_build.log | tail -50
-        env:
-          JAVA_HOME: /opt/java/openjdk
 
       - name: Upload build log
         if: always()
