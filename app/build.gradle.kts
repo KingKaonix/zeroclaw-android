@@ -14,10 +14,6 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0.0"
-
-        ndk {
-            abiFilters += listOf("arm64-v8a")
-        }
     }
 
     buildTypes {
@@ -41,18 +37,6 @@ android {
 
     buildFeatures {
         compose = true
-    }
-
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-        }
-    }
-
-    sourceSets {
-        getByName("main") {
-            jniLibs.srcDirs("src/main/jniLibs")
-        }
     }
 }
 

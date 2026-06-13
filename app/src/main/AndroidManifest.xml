@@ -2,12 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.kaonixx.zeroclaw">
 
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
         android:allowBackup="true"
@@ -15,8 +12,7 @@
         android:icon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.ZeroClaw"
-        android:extractNativeLibs="true">
+        android:theme="@style/Theme.ZeroClaw">
 
         <activity
             android:name=".MainActivity"
@@ -30,9 +26,7 @@
 
         <service
             android:name=".ZeroClawService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse"
-            android:process=":zeroclaw" />
+            android:exported="false" />
 
         <receiver
             android:name=".BootReceiver"
