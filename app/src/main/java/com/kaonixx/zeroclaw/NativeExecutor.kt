@@ -2,6 +2,7 @@ package com.kaonixx.zeroclaw
 
 import android.util.Log
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 /**
  * Executes a native binary by loading it into a memfd (anonymous memory)
@@ -115,7 +116,10 @@ class MemfdProcess(private val pid: Int) : Process() {
     override fun getInputStream() = java.io.ByteArrayInputStream(ByteArray(0))
     override fun getErrorStream() = java.io.ByteArrayInputStream(ByteArray(0))
 
-    override fun waitFor() = waitFor(0, java.util.concurrent.TimeUnit.MILLISECONDS)
+    override fun waitFor(): Int {
+        waitFor(0L, TimeUnit.MILLISECONDS)
+        return exitValue()
+    }
 
     override fun waitFor(timeout: Long, unit: TimeUnit): Boolean {
         val deadline = System.currentTimeMillis() + unit.toMillis(timeout)
@@ -148,7 +152,6 @@ class MemfdProcess(private val pid: Int) : Process() {
             for (line in status) {
                 if (line.startsWith("State:")) {
                     val state = line.substringAfter("State:").trim().firstOrNull()
-                    // 'Z' = zombie (exited but not reaped), 'S' = sleeping, 'R' = running
                     return if (state == 'Z' || state == 'S' || state == 'R') 0 else -1
                 }
             }
