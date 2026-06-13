@@ -298,12 +298,12 @@ class ZeroClawService : Service() {
                 val output = p.inputStream.bufferedReader().readText().trim()
                 val exitCode = p.waitFor()
                 if (exitCode == 0) {
-                    Log.d(TAG, "Binary cmd [$label] succeeded: ${output.take(100)}")
+                    Log.d(TAG, "Binary cmd [${s.label}] succeeded: ${output.take(100)}")
                     return output
                 }
-                Log.w(TAG, "Binary cmd [$label] exited $exitCode: ${output.take(100)}")
+                Log.w(TAG, "Binary cmd [${s.label}] exited $exitCode: ${output.take(100)}")
             } catch (e: Exception) {
-                Log.d(TAG, "Binary cmd [$label] failed: ${e.message}")
+                Log.d(TAG, "Binary cmd [${s.label}] failed: ${e.message}")
             }
         }
         Log.w(TAG, "Binary cmd '${args.firstOrNull()}' failed in all strategies")
