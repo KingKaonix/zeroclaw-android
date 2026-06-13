@@ -28,6 +28,16 @@ class ZeroClawService : Service() {
         const val ACTION_STOP = "com.kaonixx.zeroclaw.STOP_SERVICE"
     }
 
+    /** System linker for running standalone PIE binaries on Android.
+      * Android 10+ mounts app data dirs noexec, so direct ProcessBuilder calls
+      * fail with EACCES even after setExecutable(true). The linker is a system
+      * binary that is always executable and can load our ELF from a read-only
+      * file. */
+    private val LINKER: String by lazy {
+        if (File("/system/bin/linker64").exists()) "/system/bin/linker64"
+        else "/system/bin/linker"
+    }
+
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -108,8 +118,6 @@ class ZeroClawService : Service() {
                 if (!configDir.exists()) configDir.mkdirs()
 
                 // Create canonical config using daemon's own tools
-                // Step 1: generate canonical config (matches daemon's internal schema exactly)
-                // Step 2: set Android-specific overrides via config set
                 val configFile = File(configDir, "config.toml")
                 if (!configFile.exists()) {
                     Log.i(TAG, "Generating canonical config...")
@@ -119,14 +127,13 @@ class ZeroClawService : Service() {
                     ), filesDir)
                     Log.i(TAG, "Config generate: ${genResult.trim().take(100)}")
 
-                    // Step 2: apply Android overrides via config set
+                    // Apply Android-specific overrides.
+                    // Model provider / agent model config is done through the
+                    // web UI quickstart at http://127.0.0.1:18789/quickstart
                     Log.i(TAG, "Applying Android config overrides...")
                     listOf(
                         listOf("gateway", "port", GATEWAY_PORT.toString()),
                         listOf("gateway", "web_dist_dir", "${filesDir.absolutePath}/web/dist"),
-                        listOf("agent", "name", "SimonAI-Android"),
-                        listOf("agent", "model", "gpt-4o-mini"),
-                        listOf("model_provider", "openai"),
                         listOf("agents.default", "enabled", "true"),
                         listOf("mcp", "enabled", "true"),
                         listOf("memory", "backend", "sqlite"),
@@ -139,13 +146,16 @@ class ZeroClawService : Service() {
                     Log.i(TAG, "Config setup complete")
                 }
 
+                // Use the system linker to load the binary — Android 10+ mounts
+                // app data dirs noexec, making direct exec() impossible.
                 val pb = ProcessBuilder(
+                    LINKER,
                     binary.absolutePath,
                     "--config-dir", configDir.absolutePath,
                     "daemon",
                     "-p", GATEWAY_PORT.toString()
                 )
-                pb.directory(filesDir)  // working dir must be writable, not binary's dir
+                pb.directory(filesDir)
                 pb.redirectErrorStream(true)
                 pb.environment()["HOME"] = filesDir.absolutePath
                 pb.environment()["RUST_LOG"] = "info"
@@ -179,20 +189,22 @@ class ZeroClawService : Service() {
         }
         Log.i(TAG, "Found native library at ${nativeLib.absolutePath}")
 
-        // Android 10+ W^X may block exec() from nativeLibraryDir.
-        // Copy to a cached location with explicit exec permission as fallback.
+        // Copy to a cached location so the linker can read it reliably across
+        // Android versions (nativeLibraryDir symlink behaviour varies).
         val cached = File(cacheDir, "libzeroclaw.exec")
         if (!cached.exists() || cached.lastModified() < nativeLib.lastModified()) {
             try {
                 nativeLib.copyTo(cached, overwrite = true)
-                cached.setExecutable(true)
                 Log.i(TAG, "Prepared executable at ${cached.absolutePath}")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to prepare cached executable", e)
-                // Fall back to direct exec if copy fails
                 return nativeLib
             }
         }
+        // NOTE: We never call setExecutable() — Android 10+ mounts app data
+        // dirs noexec, which silently ignores the exec bit. Instead, all
+        // ProcessBuilders use the system linker (LINKER field above) to load
+        // this binary. The linker only needs read permission on the file.
         return cached
     }
 
@@ -211,7 +223,8 @@ class ZeroClawService : Service() {
     }
     private fun runBinary(binary: File, args: List<String>, workDir: File): String {
         return try {
-            val pb = ProcessBuilder(binary.absolutePath, *args.toTypedArray())
+            // Use linker — same reason as startAgent (noexec on Android 10+)
+            val pb = ProcessBuilder(LINKER, binary.absolutePath, *args.toTypedArray())
             pb.directory(workDir)
             pb.redirectErrorStream(true)
             val p = pb.start()
