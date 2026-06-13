@@ -126,22 +126,20 @@ class ZeroClawService : Service() {
         workDir: File,
         env: Map<String, String> = emptyMap()
     ): java.lang.Process? {
+        data class Strategy(val label: String, val bin: File, val useLinker: Boolean)
+
         val strategies = listOf(
-            // Try 1: cached binary with direct exec (works if cacheDir is exec)
-            Triple("cached+exec", cachedBinary) { buildCommand(cachedBinary, args) },
-            // Try 2: cached binary via linker (works if linker can mmap from cacheDir)
-            Triple("cached+linker", cachedBinary) { buildLinkerCommand(cachedBinary, args) },
-            // Try 3: nativeLibraryDir binary with direct exec
-            Triple("native+exec", nativeBinary) { buildCommand(nativeBinary, args) },
-            // Try 4: nativeLibraryDir binary via linker
-            Triple("native+linker", nativeBinary) { buildLinkerCommand(nativeBinary, args) },
+            Strategy("cached+exec",   cachedBinary,  false),
+            Strategy("cached+linker", cachedBinary,  true),
+            Strategy("native+exec",   nativeBinary,  false),
+            Strategy("native+linker", nativeBinary,  true),
         )
 
         var lastError: Exception? = null
-        for ((label, bin, cmdBuilder) in strategies) {
+        for (s in strategies) {
             try {
-                val cmd = cmdBuilder()
-                Log.i(TAG, "Attempt [$label]: ${cmd.joinToString(" ").take(200)}")
+                val cmd = if (s.useLinker) buildLinkerCommand(s.bin, args) else buildCommand(s.bin, args)
+                Log.i(TAG, "Attempt [${s.label}]: ${cmd.joinToString(" ").take(200)}")
                 val pb = ProcessBuilder(cmd)
                 pb.directory(workDir)
                 pb.redirectErrorStream(true)
@@ -149,22 +147,20 @@ class ZeroClawService : Service() {
                 pb.environment()["HOME"] = workDir.absolutePath
                 pb.environment()["RUST_LOG"] = "info"
                 val p = pb.start()
-                // Quick check: if process is alive after 500ms, it started OK
                 Thread.sleep(500)
                 if (p.isAlive) {
-                    Log.i(TAG, "Process started successfully via [$label]")
+                    Log.i(TAG, "Process started successfully via [${s.label}]")
                     return p
                 }
-                // Process exited quickly - capture output
                 val output = p.inputStream.bufferedReader().readText().trim()
                 val exitCode = p.exitValue()
-                Log.w(TAG, "Process [$label] exited quickly with code $exitCode: ${output.take(200)}")
+                Log.w(TAG, "Process [${s.label}] exited quickly with code $exitCode: ${output.take(200)}")
                 lastError = IOException("Exit code $exitCode: ${output.take(100)}")
             } catch (e: SecurityException) {
-                Log.w(TAG, "Strategy [$label] failed: ${e.message}")
+                Log.w(TAG, "Strategy [${s.label}] failed: ${e.message}")
                 lastError = e
             } catch (e: IOException) {
-                Log.w(TAG, "Strategy [$label] failed: ${e.message}")
+                Log.w(TAG, "Strategy [${s.label}] failed: ${e.message}")
                 lastError = e
             }
         }
@@ -283,16 +279,18 @@ class ZeroClawService : Service() {
         cachedBinary: File,
         args: List<String>
     ): String? {
+        data class BinStrategy(val label: String, val bin: File, val useLinker: Boolean)
+
         val strategies = listOf(
-            Triple("cached+exec", cachedBinary) { buildCommand(cachedBinary, args) },
-            Triple("cached+linker", cachedBinary) { buildLinkerCommand(cachedBinary, args) },
-            Triple("native+exec", nativeBinary) { buildCommand(nativeBinary, args) },
-            Triple("native+linker", nativeBinary) { buildLinkerCommand(nativeBinary, args) },
+            BinStrategy("cached+exec",   cachedBinary,  false),
+            BinStrategy("cached+linker", cachedBinary,  true),
+            BinStrategy("native+exec",   nativeBinary,  false),
+            BinStrategy("native+linker", nativeBinary,  true),
         )
 
-        for ((label, bin, cmdBuilder) in strategies) {
+        for (s in strategies) {
             try {
-                val cmd = cmdBuilder()
+                val cmd = if (s.useLinker) buildLinkerCommand(s.bin, args) else buildCommand(s.bin, args)
                 val pb = ProcessBuilder(cmd)
                 pb.directory(filesDir)
                 pb.redirectErrorStream(true)
