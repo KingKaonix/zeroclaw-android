@@ -8,7 +8,6 @@ import android.util.Log
 import java.io.*
 import java.net.ServerSocket
 import java.net.Socket
-import java.net.URLDecoder
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
@@ -17,25 +16,16 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * ZeroClawService - runs the SimonAI agent.
  *
- * Strategy:
- * 1. Start an embedded HTTP gateway on 127.0.0.1:18789 immediately so the
- *    app UI can connect without waiting for the native binary.
- * 2. In parallel, try to start the native daemon binary via memfd (which
- *    bypasses Android's noexec). If the binary starts, it binds to 18790
- *    and the embedded gateway proxies agent endpoints there.
- * 3. If the binary can't start, the embedded gateway still responds to
- *    status/health/etc. so the app UI is usable.
+ * Embeds a lightweight HTTP gateway on 127.0.0.1:18789 so the app UI
+ * always connects immediately. No native binary execution needed.
  */
 class ZeroClawService : Service() {
 
     private var gatewayServer: GatewayServer? = null
-    private var nativeProcess: Process? = null
-    private val agentExecutor = Executors.newSingleThreadExecutor()
     private var notificationScheduler: ScheduledExecutorService? = null
-    private val CONFIG_DIR = ".zeroclaw"
-    private val GATEWAY_PORT = 18789
-    private val DAEMON_PORT = 18790  // native binary binds here if it starts
     private val startTime = AtomicLong(System.currentTimeMillis())
+    private var paired = false
+    private var authToken: String? = null
 
     companion object {
         const val TAG = "SimonAI"
@@ -62,17 +52,10 @@ class ZeroClawService : Service() {
             Log.w(TAG, "Foreground start failed: ${e.message}")
         }
 
-        // 1. Start the embedded gateway immediately (always works)
         startGatewayServer()
-
-        // 2. Try to start the native daemon binary in background
-        startNativeDaemon()
-
         startNotificationUpdater()
         return START_STICKY
     }
-
-    // ------------------------------------------------------------------ NOTIFICATIONS
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -104,7 +87,7 @@ class ZeroClawService : Service() {
         }
         return builder
             .setContentTitle("SimonAI $tier")
-            .setContentText("Agent running on :$GATEWAY_PORT")
+            .setContentText("Agent running on :18789")
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
@@ -131,169 +114,53 @@ class ZeroClawService : Service() {
         }, 60L, 60L, TimeUnit.SECONDS)
     }
 
-    private fun showFailedNotification(detail: String) {
-        try {
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                Notification.Builder(this, CHANNEL_ID)
-            } else {
-                @Suppress("DEPRECATION")
-                Notification.Builder(this)
-            }
-            manager.notify(NOTIFICATION_ID + 1, builder
-                .setContentTitle("SimonAI Daemon")
-                .setContentText(detail)
-                .setSmallIcon(R.drawable.ic_notification)
-                .setOngoing(false)
-                .build())
-        } catch (_: Exception) {}
-    }
-
-    // ------------------------------------------------------------------ EMBEDDED GATEWAY
-
     private fun startGatewayServer() {
         try {
-            gatewayServer = GatewayServer(GATEWAY_PORT, startTime, filesDir)
+            gatewayServer = GatewayServer(18789, startTime, filesDir,
+                { paired }, { authToken }, { token -> authToken = token; paired = true })
             gatewayServer?.start()
-            Log.i(TAG, "Embedded gateway started on :$GATEWAY_PORT")
+            Log.i(TAG, "Gateway started on :18789")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start embedded gateway: ${e.message}")
+            Log.e(TAG, "Gateway failed: ${e.message}")
         }
     }
-
-    // ------------------------------------------------------------------ NATIVE DAEMON
-
-    private fun startNativeDaemon() {
-        agentExecutor.execute {
-            try {
-                val nativeBinary = File(applicationInfo.nativeLibraryDir, "libzeroclaw.so")
-                if (!nativeBinary.exists()) {
-                    Log.w(TAG, "Native binary not found (libzeroclaw.so missing)")
-                    showFailedNotification("Agent binary not available - embedded gateway active")
-                    return@execute
-                }
-                Log.i(TAG, "Native binary found: ${nativeBinary.absolutePath}")
-
-                // Copy to cache for memfd to read
-                val cachedBinary = File(cacheDir, "libzeroclaw.exec")
-                if (!cachedBinary.exists() || cachedBinary.lastModified() < nativeBinary.lastModified()) {
-                    try {
-                        nativeBinary.inputStream().use { i ->
-                            cachedBinary.outputStream().use { o -> i.copyTo(o) }
-                        }
-                        cachedBinary.setExecutable(true)
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Cache copy failed: ${e.message}")
-                    }
-                }
-                val binaryFile = if (cachedBinary.exists()) cachedBinary else nativeBinary
-
-                // Set up config
-                val configDir = File(filesDir, CONFIG_DIR)
-                if (!configDir.exists()) configDir.mkdirs()
-                writeDefaultConfig(File(configDir, "config.toml"))
-
-                // Try to start daemon on port 18790
-                val daemonArgs = listOf(
-                    "--config-dir", configDir.absolutePath,
-                    "daemon", "-p", DAEMON_PORT.toString()
-                )
-
-                Log.i(TAG, "Starting native daemon via memfd...")
-                nativeProcess = NativeExecutor.exec(
-                    binaryFile, daemonArgs, filesDir,
-                    mapOf("RUST_LOG" to "info", "RUST_BACKTRACE" to "1")
-                )
-
-                if (nativeProcess != null) {
-                    Log.i(TAG, "Native daemon started, PID tracked")
-                    showFailedNotification("Native agent started")
-                    // The embedded gateway will proxy agent endpoints to it
-                    try { nativeProcess?.waitFor() } catch (_: Exception) {}
-                    Log.w(TAG, "Native daemon exited")
-                } else {
-                    Log.w(TAG, "Native daemon did not start - embedded gateway is active")
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Native daemon error: ${e.message}")
-            }
-        }
-    }
-
-    private fun writeDefaultConfig(configFile: File) {
-        if (configFile.exists()) return
-        try {
-            configFile.writeText("""
-                [gateway]
-                port = $DAEMON_PORT
-                web_dist_dir = "${filesDir.absolutePath}/web/dist"
-                [agents.default]
-                enabled = true
-                [mcp]
-                enabled = true
-                [memory]
-                backend = "sqlite"
-                [logs]
-                level = "info"
-                [server]
-                allowed_origins = ["http://localhost:18789", "http://127.0.0.1:18789", "capacitor://localhost", "file://"]
-                [auth]
-                mode = "optional"
-            """.trimIndent())
-        } catch (_: Exception) {}
-    }
-
-    // ------------------------------------------------------------------ LIFECYCLE
 
     override fun onDestroy() {
         super.onDestroy()
         notificationScheduler?.shutdown()
         gatewayServer?.stop()
-        nativeProcess?.destroy()
-        try { nativeProcess?.waitFor() } catch (_: Exception) {}
     }
 
     override fun onBind(intent: Intent?) = null
 }
 
 // ======================================================================
-// MINIMAL EMBEDDED HTTP GATEWAY
+// HTTP GATEWAY
 // ======================================================================
 
 class GatewayServer(
     private val port: Int,
     private val startTime: AtomicLong,
-    private val filesDir: File
+    private val filesDir: File,
+    private val isPaired: () -> Boolean,
+    private val getToken: () -> String?,
+    private val setPaired: (String) -> Unit
 ) {
     private var serverSocket: ServerSocket? = null
     private var running = false
-    private val threadPool = Executors.newFixedThreadPool(4)
-    private val serverThread = Thread(this::run, "Gateway")
+    private val pool = Executors.newFixedThreadPool(4)
+    private val thread = Thread(this::run, "Gateway")
 
-    fun start() {
-        running = true
-        serverSocket = ServerSocket(port, 10, java.net.InetAddress.getByName("127.0.0.1"))
-        serverThread.start()
-    }
-
-    fun stop() {
-        running = false
-        try { serverSocket?.close() } catch (_: Exception) {}
-        threadPool.shutdown()
-    }
+    fun start() { running = true; serverSocket = ServerSocket(port, 10, java.net.InetAddress.getByName("127.0.0.1")); thread.start() }
+    fun stop() { running = false; try { serverSocket?.close() } catch (_: Exception) {}; pool.shutdown() }
 
     private fun run() {
         while (running) {
-            try {
-                val client = serverSocket?.accept() ?: break
-                threadPool.execute { handleClient(client) }
-            } catch (_: Exception) {
-                if (!running) break
-            }
+            try { pool.execute { handle(it) } } catch (_: Exception) { if (!running) break }
         }
     }
 
-    private fun handleClient(client: Socket) {
+    private fun handle(client: Socket) {
         try {
             client.use { sock ->
                 val reader = sock.getInputStream().bufferedReader()
@@ -304,109 +171,100 @@ class GatewayServer(
                 if (parts.size < 2) return
                 val method = parts[0]
                 val rawPath = parts[1]
+                val path = rawPath.split("?").first()
 
-                // Read headers
                 var contentLength = 0
                 while (true) {
                     val header = reader.readLine() ?: break
                     if (header.isBlank()) break
-                    if (header.lowercase().startsWith("content-length:")) {
+                    if (header.lowercase().startsWith("content-length:"))
                         contentLength = header.substringAfter(":").trim().toIntOrNull() ?: 0
-                    }
                 }
 
-                // Read body if present
                 val body = if (contentLength > 0) {
                     val buf = CharArray(contentLength)
                     reader.read(buf, 0, contentLength)
                     String(buf)
                 } else ""
 
-                // Parse path
-                val path = rawPath.split("?").first()
-                val query = if (rawPath.contains("?")) rawPath.substringAfter("?") else ""
+                val uptime = (System.currentTimeMillis() - startTime.get()) / 1000
 
-                // Route
                 val response = when {
-                    path == "/api/status" || path == "/api/health" -> handleStatus()
-                    path == "/api/quickstart/state" -> """{"quickstart_completed":true,"agents":[]}"""
+                    path == "/api/status" || path == "/api/health" -> json(
+                        "version" to "1.0.0",
+                        "gateway_port" to port,
+                        "uptime_seconds" to uptime,
+                        "paired" to isPaired(),
+                        "daemon_started_at" to java.time.Instant.now().toString(),
+                        "health" to mapOf("pid" to android.os.Process.myPid(), "uptime_seconds" to uptime, "components" to mapOf("gateway" to mapOf("status" to "ok"))),
+                        "process" to mapOf("rss_bytes" to 0, "system_ram_total_bytes" to 0),
+                        "channels" to emptyMap<String, Boolean>()
+                    )
+                    path == "/api/quickstart/state" -> json("quickstart_completed" to isPaired(), "agents" to emptyList<Any>())
                     path == "/api/quickstart/fields" -> """[]"""
-                    path.startsWith("/api/agent/") && path.endsWith("/messages") -> """[]"""
-                    path.startsWith("/api/agent/") && path.endsWith("/chat") -> """{"id":"","role":"assistant","content":"Hello! I'm running in embedded mode.","timestamp":"now"}"""
-                    path.startsWith("/api/agent/") -> handleAgent(path.removePrefix("/api/agent/").removeSuffix("/"))
                     path == "/api/agents" -> """[]"""
+                    path.startsWith("/api/agent/") && method == "POST" && path.endsWith("/chat") -> json("id" to "", "role" to "assistant", "content" to "Embedded gateway ready. Pair with a remote agent to process messages.", "timestamp" to "now")
+                    path.startsWith("/api/agent/") -> {
+                        val alias = path.removePrefix("/api/agent/").removeSuffix("/").split("/").first()
+                        json("alias" to alias, "name" to alias, "status" to "idle")
+                    }
                     path == "/api/tools" -> """[]"""
-                    path == "/api/config" -> """[]"""
-                    path.startsWith("/api/config/") -> """{"name":"","label":null,"type":"section","keys":[]}"""
+                    path == "/api/config" -> """[{"name":"gateway","label":"Gateway","sections":[{"name":"gateway","keys":[{"key":"port","value":18789,"type":"integer"}]}]}]"""
+                    path.startsWith("/api/config/") -> json("name" to "", "keys" to emptyList<Any>())
                     path == "/api/logs" -> """[]"""
                     path == "/api/cron" -> """[]"""
-                    path == "/api/integrations" -> """[]"""
-                    path == "/api/doctor" -> """[]"""
-                    path == "/api/admin/reload" -> """{"success":true}"""
-                    path == "/api/admin/pair/code"  -> handlePairCode()
-                    path == "/api/admin/pair"       -> handlePair(body)
-                    path == "/api/quickstart/apply"  -> """{"success":true,"message":"Embedded mode"}"""
-                    path == "/api/quickstart/dismiss" -> """{"success":true,"message":"Dismissed"}"""
-                    path.startsWith("/api/") -> """{"error":"not_found","message":"Endpoint not available"}"""
-                    else -> """{"error":"not_found"}"""
+                    path == "/api/integrations" -> """[{"platform":"embedded","enabled":true,"status":"active","label":"Embedded Gateway"}]"""
+                    path == "/api/doctor" -> """[{"id":"gateway","title":"Gateway Status","status":"pass","message":"Embedded gateway running"}]"""
+                    path == "/api/admin/reload" -> json("success" to true)
+                    path == "/api/admin/pair/code" -> json("pairing_code" to "EMBEDDED-GATEWAY")
+                    path == "/api/admin/pair" && method == "POST" -> {
+                        try {
+                            val code = "\"code\"\\s*:\\s*\"([^\"]+)\"".toRegex().find(body)?.groupValues?.getOrNull(1) ?: ""
+                            if (code.isNotBlank()) {
+                                setPaired(code)
+                                json("token" to "embedded-token", "success" to true)
+                            } else json("success" to false, "error" to "No code")
+                        } catch (_: Exception) { json("success" to false) }
+                    }
+                    path == "/api/quickstart/apply" && method == "POST" -> json("success" to true, "message" to "Applied")
+                    path == "/api/quickstart/dismiss" -> json("success" to true, "message" to "Dismissed")
+                    else -> "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n"
                 }
 
-                val httpResponse = "HTTP/1.1 200 OK\r\n" +
-                    "Content-Type: application/json\r\n" +
-                    "Content-Length: ${response.toByteArray().size}\r\n" +
-                    "Access-Control-Allow-Origin: *\r\n" +
-                    "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n" +
-                    "Access-Control-Allow-Headers: Content-Type, Authorization\r\n" +
-                    "Connection: close\r\n\r\n" +
-                    response
+                val responseStr = if (response.startsWith("HTTP/1.1")) response
+                else "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n$response"
 
-                writer.write(httpResponse.toByteArray())
+                writer.write(responseStr.toByteArray())
                 writer.flush()
             }
-        } catch (e: Exception) {
-            Log.d("Gateway", "Client error: ${e.message}")
-        }
+        } catch (_: Exception) {}
     }
 
-    private val uptime: Long get() = System.currentTimeMillis() - startTime.get()
-
-    private fun handleStatus(): String {
-        return """{
-            "version":"1.0.0",
-            "model_provider":"embedded",
-            "model":"gateway",
-            "temperature":0.0,
-            "uptime_seconds":$uptime,
-            "daemon_started_at":"${java.time.Instant.now()}",
-            "gateway_port":$port,
-            "locale":"en",
-            "memory_backend":"embedded",
-            "paired":false,
-            "channels":{},
-            "health":{
-                "pid":${android.os.Process.myPid()},
-                "updated_at":"now",
-                "uptime_seconds":$uptime,
-                "components":{"gateway":{"status":"ok"}}
-            },
-            "process":{
-                "rss_bytes":0,
-                "system_ram_total_bytes":0,
-                "cpu_percent":null,
-                "num_cpus":0
+    private fun json(vararg pairs: Pair<String, Any?>): String {
+        val entries = pairs.map { (k, v) ->
+            val value = when (v) {
+                null -> "null"
+                is String -> "\"${v.replace("\"", "\\\"")}\""
+                is Boolean -> v.toString()
+                is Number -> v.toString()
+                is Map<*, *> -> {
+                    val inner = v.entries.joinToString(",") { (ik, iv) ->
+                        val ivs = when (iv) {
+                            null -> "null"
+                            is String -> "\"$iv\""
+                            is Boolean -> iv.toString()
+                            is Number -> iv.toString()
+                            else -> "\"$iv\""
+                        }
+                        "\"$ik\":$ivs"
+                    }
+                    "{$inner}"
+                }
+                is List<*> -> "[${v.joinToString(",") { e -> when(e) { is String -> "\"$e\""; null -> "null"; else -> e.toString() } }}]"
+                else -> "\"$v\""
             }
-        }""".replace("\\s+".toRegex(), " ")  // collapse whitespace
-    }
-
-    private fun handleAgent(alias: String): String {
-        return """{"alias":"$alias","name":"$alias","model":"embedded","status":"idle","provider":"embedded","description":"Embedded agent"}"""
-    }
-
-    private fun handlePairCode(): String {
-        return """{"pairing_code":"EMBEDDED-MODE"}"""
-    }
-
-    private fun handlePair(body: String): String {
-        return """{"token":"embedded-token","success":true}"""
+            "\"$k\":$value"
+        }
+        return "{${entries.joinToString(",")}}"
     }
 }
