@@ -28,16 +28,6 @@ class ZeroClawService : Service() {
         const val ACTION_STOP = "com.kaonixx.zeroclaw.STOP_SERVICE"
     }
 
-    /** System linker for running standalone PIE binaries on Android.
-      * Android 10+ mounts app data dirs noexec, so direct ProcessBuilder calls
-      * fail with EACCES even after setExecutable(true). The linker is a system
-      * binary that is always executable and can load our ELF from a read-only
-      * file. */
-    private val LINKER: String by lazy {
-        if (File("/system/bin/linker64").exists()) "/system/bin/linker64"
-        else "/system/bin/linker"
-    }
-
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
@@ -105,31 +95,118 @@ class ZeroClawService : Service() {
             .build()
     }
 
+    /** Try execve() path first, fall back to linker if the mount is noexec.
+      *
+      * On Android 10+, app data dirs are typically mounted noexec. This means
+      * both direct execve() and the linker's mmap(PROT_EXEC) fail from cacheDir
+      * or filesDir. The system's nativeLibraryDir is sometimes executable;
+      * try it first. If direct execution fails with EACCES (permission denied),
+      * fall back to running via the system linker:
+      *
+      *   /system/bin/linker64 /path/to/binary <args>
+      *
+      * The linker itself is a system binary (executable), and on some Android
+      * versions it can mmap(PROT_EXEC) from app dirs where execve() fails.
+      */
+    private fun buildCommand(binary: File, args: List<String>): List<String> {
+        return listOf(binary.absolutePath) + args
+    }
+
+    private fun buildLinkerCommand(binary: File, args: List<String>): List<String> {
+        val linker = if (File("/system/bin/linker64").exists()) "/system/bin/linker64"
+                     else "/system/bin/linker"
+        return listOf(linker, binary.absolutePath) + args
+    }
+
+    /** Try running a subprocess with fallback: direct exec -> linker -> nativeLibraryDir direct -> nativeLibraryDir linker. */
+    private fun launchProcess(
+        nativeBinary: File,
+        cachedBinary: File,
+        args: List<String>,
+        workDir: File,
+        env: Map<String, String> = emptyMap()
+    ): java.lang.Process? {
+        val strategies = listOf(
+            // Try 1: cached binary with direct exec (works if cacheDir is exec)
+            Triple("cached+exec", cachedBinary) { buildCommand(cachedBinary, args) },
+            // Try 2: cached binary via linker (works if linker can mmap from cacheDir)
+            Triple("cached+linker", cachedBinary) { buildLinkerCommand(cachedBinary, args) },
+            // Try 3: nativeLibraryDir binary with direct exec
+            Triple("native+exec", nativeBinary) { buildCommand(nativeBinary, args) },
+            // Try 4: nativeLibraryDir binary via linker
+            Triple("native+linker", nativeBinary) { buildLinkerCommand(nativeBinary, args) },
+        )
+
+        var lastError: Exception? = null
+        for ((label, bin, cmdBuilder) in strategies) {
+            try {
+                val cmd = cmdBuilder()
+                Log.i(TAG, "Attempt [$label]: ${cmd.joinToString(" ").take(200)}")
+                val pb = ProcessBuilder(cmd)
+                pb.directory(workDir)
+                pb.redirectErrorStream(true)
+                env.forEach { (k, v) -> pb.environment()[k] = v }
+                pb.environment()["HOME"] = workDir.absolutePath
+                pb.environment()["RUST_LOG"] = "info"
+                val p = pb.start()
+                // Quick check: if process is alive after 500ms, it started OK
+                Thread.sleep(500)
+                if (p.isAlive) {
+                    Log.i(TAG, "Process started successfully via [$label]")
+                    return p
+                }
+                // Process exited quickly - capture output
+                val output = p.inputStream.bufferedReader().readText().trim()
+                val exitCode = p.exitValue()
+                Log.w(TAG, "Process [$label] exited quickly with code $exitCode: ${output.take(200)}")
+                lastError = IOException("Exit code $exitCode: ${output.take(100)}")
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Strategy [$label] failed: ${e.message}")
+                lastError = e
+            } catch (e: IOException) {
+                Log.w(TAG, "Strategy [$label] failed: ${e.message}")
+                lastError = e
+            }
+        }
+        Log.e(TAG, "All execution strategies failed", lastError)
+        return null
+    }
+
     private fun startAgent() {
         agentExecutor.execute {
             try {
-                val binary = extractBinary()
-                if (binary == null) {
-                    Log.e(TAG, "Binary extraction failed")
+                val nativeBinary = File(applicationInfo.nativeLibraryDir, "libzeroclaw.so")
+                if (!nativeBinary.exists()) {
+                    Log.e(TAG, "Native library not found at ${nativeBinary.absolutePath}")
                     return@execute
+                }
+                Log.i(TAG, "Found native library at ${nativeBinary.absolutePath}")
+
+                // Prepare cached copy (for strategies that need a local writable copy)
+                val cachedBinary = File(cacheDir, "libzeroclaw.exec")
+                if (!cachedBinary.exists() || cachedBinary.lastModified() < nativeBinary.lastModified()) {
+                    try {
+                        nativeBinary.copyTo(cachedBinary, overwrite = true)
+                        cachedBinary.setExecutable(true)
+                        Log.i(TAG, "Cached binary at ${cachedBinary.absolutePath}")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to create cached copy, will use nativeLibraryDir directly")
+                    }
                 }
 
                 val configDir = File(filesDir, CONFIG_DIR)
                 if (!configDir.exists()) configDir.mkdirs()
 
-                // Create canonical config using daemon's own tools
+                // Generate config if first launch
                 val configFile = File(configDir, "config.toml")
                 if (!configFile.exists()) {
                     Log.i(TAG, "Generating canonical config...")
-                    val genResult = runBinary(binary, listOf(
+                    val genResult = runBinary(nativeBinary, cachedBinary, listOf(
                         "--config-dir", configDir.absolutePath,
                         "config", "generate"
-                    ), filesDir)
-                    Log.i(TAG, "Config generate: ${genResult.trim().take(100)}")
+                    ))
+                    Log.i(TAG, "Config generate: ${genResult?.take(200) ?: "failed"}")
 
-                    // Apply Android-specific overrides.
-                    // Model provider / agent model config is done through the
-                    // web UI quickstart at http://127.0.0.1:18789/quickstart
                     Log.i(TAG, "Applying Android config overrides...")
                     listOf(
                         listOf("gateway", "port", GATEWAY_PORT.toString()),
@@ -138,34 +215,34 @@ class ZeroClawService : Service() {
                         listOf("mcp", "enabled", "true"),
                         listOf("memory", "backend", "sqlite"),
                     ).forEach { (section, key, value) ->
-                        runBinary(binary, listOf(
+                        runBinary(nativeBinary, cachedBinary, listOf(
                             "--config-dir", configDir.absolutePath,
                             "config", "set", "$section.$key", value
-                        ), filesDir)
+                        ))
                     }
                     Log.i(TAG, "Config setup complete")
                 }
 
-                // Use the system linker to load the binary — Android 10+ mounts
-                // app data dirs noexec, making direct exec() impossible.
-                val pb = ProcessBuilder(
-                    LINKER,
-                    binary.absolutePath,
+                val daemonArgs = listOf(
                     "--config-dir", configDir.absolutePath,
-                    "daemon",
-                    "-p", GATEWAY_PORT.toString()
+                    "daemon", "-p", GATEWAY_PORT.toString()
                 )
-                pb.directory(filesDir)
-                pb.redirectErrorStream(true)
-                pb.environment()["HOME"] = filesDir.absolutePath
-                pb.environment()["RUST_LOG"] = "info"
 
-                process = pb.start()
+                process = launchProcess(
+                    nativeBinary, cachedBinary, daemonArgs, filesDir,
+                    mapOf("RUST_LOG" to "info")
+                )
+
+                if (process == null) {
+                    Log.e(TAG, "Failed to start daemon - all strategies exhausted")
+                    showFailedNotification()
+                    return@execute
+                }
 
                 Log.i(TAG, "Agent started.")
                 Log.i(TAG, "Gateway: http://127.0.0.1:$GATEWAY_PORT")
 
-                // Read stdout/stderr in background
+                // Read stdout/stderr and log it
                 process?.inputStream?.bufferedReader()?.use { reader ->
                     reader.lines().forEach { line ->
                         Log.d(TAG, "[agent] $line")
@@ -177,64 +254,62 @@ class ZeroClawService : Service() {
 
             } catch (e: Exception) {
                 Log.e(TAG, "Agent crashed", e)
+                showFailedNotification()
             }
         }
     }
 
-    private fun extractBinary(): File? {
-        val nativeLib = File(applicationInfo.nativeLibraryDir, "libzeroclaw.so")
-        if (!nativeLib.exists()) {
-            Log.e(TAG, "Native library not found at ${nativeLib.absolutePath}")
-            return null
-        }
-        Log.i(TAG, "Found native library at ${nativeLib.absolutePath}")
-
-        // Copy to a cached location so the linker can read it reliably across
-        // Android versions (nativeLibraryDir symlink behaviour varies).
-        val cached = File(cacheDir, "libzeroclaw.exec")
-        if (!cached.exists() || cached.lastModified() < nativeLib.lastModified()) {
-            try {
-                nativeLib.copyTo(cached, overwrite = true)
-                Log.i(TAG, "Prepared executable at ${cached.absolutePath}")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to prepare cached executable", e)
-                return nativeLib
-            }
-        }
-        // NOTE: We never call setExecutable() — Android 10+ mounts app data
-        // dirs noexec, which silently ignores the exec bit. Instead, all
-        // ProcessBuilders use the system linker (LINKER field above) to load
-        // this binary. The linker only needs read permission on the file.
-        return cached
-    }
-
-    private fun getAppVersionCode(): Long {
-        return try {
-            val info: PackageInfo = packageManager.getPackageInfo(packageName, 0)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                info.longVersionCode
+    private fun showFailedNotification() {
+        try {
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Notification.Builder(this, CHANNEL_ID)
             } else {
                 @Suppress("DEPRECATION")
-                info.versionCode.toLong()
+                Notification.Builder(this)
             }
-        } catch (e: Exception) {
-            1L
-        }
+            manager.notify(NOTIFICATION_ID + 1, builder
+                .setContentTitle("SimonAI Failed")
+                .setContentText("Agent daemon could not start. Check logs.")
+                .setSmallIcon(R.drawable.ic_notification)
+                .setOngoing(false)
+                .build())
+        } catch (_: Exception) {}
     }
-    private fun runBinary(binary: File, args: List<String>, workDir: File): String {
-        return try {
-            // Use linker — same reason as startAgent (noexec on Android 10+)
-            val pb = ProcessBuilder(LINKER, binary.absolutePath, *args.toTypedArray())
-            pb.directory(workDir)
-            pb.redirectErrorStream(true)
-            val p = pb.start()
-            p.inputStream.bufferedReader().readText().trim().also {
-                p.waitFor()
+
+    /** Run a one-shot binary command via fallback strategies, capture stdout. */
+    private fun runBinary(
+        nativeBinary: File,
+        cachedBinary: File,
+        args: List<String>
+    ): String? {
+        val strategies = listOf(
+            Triple("cached+exec", cachedBinary) { buildCommand(cachedBinary, args) },
+            Triple("cached+linker", cachedBinary) { buildLinkerCommand(cachedBinary, args) },
+            Triple("native+exec", nativeBinary) { buildCommand(nativeBinary, args) },
+            Triple("native+linker", nativeBinary) { buildLinkerCommand(nativeBinary, args) },
+        )
+
+        for ((label, bin, cmdBuilder) in strategies) {
+            try {
+                val cmd = cmdBuilder()
+                val pb = ProcessBuilder(cmd)
+                pb.directory(filesDir)
+                pb.redirectErrorStream(true)
+                val p = pb.start()
+                val output = p.inputStream.bufferedReader().readText().trim()
+                val exitCode = p.waitFor()
+                if (exitCode == 0) {
+                    Log.d(TAG, "Binary cmd [$label] succeeded: ${output.take(100)}")
+                    return output
+                }
+                Log.w(TAG, "Binary cmd [$label] exited $exitCode: ${output.take(100)}")
+            } catch (e: Exception) {
+                Log.d(TAG, "Binary cmd [$label] failed: ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Binary command ${args.firstOrNull()} failed: ${e.message}")
-            ""
         }
+        Log.w(TAG, "Binary cmd '${args.firstOrNull()}' failed in all strategies")
+        return null
     }
 
     private fun startNotificationUpdater() {
