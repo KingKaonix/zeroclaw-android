@@ -112,6 +112,7 @@ class ZeroClawService : Service() {
                         listOf("gateway", "web_dist_dir", "${filesDir.absolutePath}/web/dist"),
                         listOf("agent", "name", "SimonAI-Android"),
                         listOf("agent", "model", "gpt-4o-mini"),
+                        listOf("model_provider", "openai"),
                         listOf("agents.default", "enabled", "true"),
                         listOf("mcp", "enabled", "true"),
                         listOf("memory", "backend", "sqlite"),

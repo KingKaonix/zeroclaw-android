@@ -1,0 +1,42 @@
+## ZeroClaw Android Project - Phase Card
+
+### Goal
+Build Android mobile application for SimonAI (ZeroClaw) with native Rust daemon integration, mobile UI, and quickstart setup.
+
+### Current State
+- Core daemon integration implemented
+- Native binary extraction and execution
+- Onboarding flow with provider selection
+- Quickstart API endpoints
+- Navigation and UI structure
+
+### Critical Path
+1. Daemon startup with proper provider configuration
+2. Loading screen with progress tracking
+3. APK build and deployment
+4. UI enhancements and remaining features
+
+### Success Criteria
+- App launches without stuck loading screens
+- Daemon properly configured with model provider
+- APK builds successfully
+- All requested features implemented
+
+### Risks
+- Build environment issues (AAPT2 daemon)
+- Native binary compatibility
+- Provider configuration errors
+- APK signing and distribution
+
+### Dependencies
+- Rust toolchain
+- Android NDK
+- Android SDK
+- Gradle 8.7+
+- Kotlin 2.0.21+
+
+### Estimated Timeline
+Phase 1 (Days 1-3): Setup and discovery
+Phase 2 (Days 4-7): Core functionality
+Phase 3 (Days 8-10): UI and features
+Phase 4 (Days 11-12): Testing and deployment

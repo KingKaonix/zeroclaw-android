@@ -36,7 +36,6 @@ private enum class AppUiState { StartingDaemon, DaemonError, Onboarding, Ready }
 
 class MainActivity : AppCompatActivity() {
     companion object {
-        const val GUMROAD_URL = "https://mulikjo.gumroad.com/l/zeroclaw-android"
         const val LICENSE_SERVER_URL = "https://zeroclaw-license.joemulik.workers.dev"
     }
 
