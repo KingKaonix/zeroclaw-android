@@ -15,6 +15,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -198,16 +200,16 @@ class MainActivity : AppCompatActivity() {
             ) {
                 // Logo
                 Surface(
-                    modifier = Modifier.size(72.dp),
-                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier.size(96.dp),
+                    shape = RoundedCornerShape(24.dp),
                     color = CyanAccentGlow
                 ) {
                     Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            "S",
-                            style = MaterialTheme.typography.headlineLarge,
-                            color = CyanAccent,
-                            fontWeight = FontWeight.Bold
+                        androidx.compose.foundation.Image(
+                            painter = painterResource(R.drawable.ic_splash_logo),
+                            contentDescription = "SimonAI Logo",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
                         )
                     }
                 }

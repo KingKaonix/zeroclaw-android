@@ -26,6 +26,7 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.kaonixx.zeroclaw.api.ApiClient
 import com.kaonixx.zeroclaw.navigation.NavGraph
 import com.kaonixx.zeroclaw.navigation.Screen
 import com.kaonixx.zeroclaw.theme.*
@@ -176,7 +177,7 @@ fun AppShell(context: Context, isPaired: Boolean, onPair: suspend (String) -> Un
                     if (!isPro) {
                         Button(
                             onClick = {
-                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://mulikjo.gumroad.com/l/zeroclaw-android"))
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(ApiClient.GUMROAD_URL))
                                 context.startActivity(intent)
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = CyanAccent),

@@ -25,6 +25,7 @@ class ZeroClawService : Service() {
         const val NOTIFICATION_ID = 1
         const val CHANNEL_ID = "simonai_service"
         const val CHANNEL_NAME = "SimonAI Agent"
+        const val ACTION_STOP = "com.kaonixx.zeroclaw.STOP_SERVICE"
     }
 
     override fun onCreate() {
@@ -33,6 +34,10 @@ class ZeroClawService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         try {
             val notification = buildNotification()
             startForeground(NOTIFICATION_ID, notification)
@@ -78,6 +83,15 @@ class ZeroClawService : Service() {
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "Exit",
+                PendingIntent.getService(
+                    this, 1,
+                    Intent(this, ZeroClawService::class.java).apply { action = ACTION_STOP },
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+                )
+            )
             .build()
     }
 

@@ -93,7 +93,11 @@ fun NavGraph(navController: NavHostController, isPaired: Boolean, onPair: suspen
         }
 
         composable(Screen.Quickstart.route) {
-            QuickstartScreen()
+            OnboardingScreen(onComplete = {
+                navController.navigate(Screen.Dashboard.route) {
+                    popUpTo(Screen.Quickstart.route) { inclusive = true }
+                }
+            })
         }
 
         composable(Screen.Onboarding.route) {

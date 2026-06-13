@@ -12,6 +12,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
 object ApiClient {
+    const val GUMROAD_URL = "https://mulikjo.gumroad.com/l/zeroclaw-android"
+
     private const val BASE = "http://127.0.0.1:18789/api"
     private val JSON = "application/json; charset=utf-8".toMediaType()
     private val gson = Gson()
