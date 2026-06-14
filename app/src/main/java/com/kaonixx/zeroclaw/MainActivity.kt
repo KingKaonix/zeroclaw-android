@@ -46,7 +46,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestNotificationPermission()
-        startService(Intent(this, ZeroClawService::class.java))
+        ContextCompat.startForegroundService(this, Intent(this, ZeroClawService::class.java))
 
         setContent {
             ZeroClawTheme {
