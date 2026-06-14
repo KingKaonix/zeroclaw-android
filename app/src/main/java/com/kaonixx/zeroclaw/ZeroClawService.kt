@@ -109,15 +109,13 @@ class ZeroClawService : Service() {
                 Log.e(TAG, "No binary found, daemon won't start")
                 return
             }
-            Log.i(TAG, "Using binary: ${binaryFile.absolutePath} (${binaryFile.length()} bytes)")
+            Log.i(TAG, "Using binary: " + binaryFile.absolutePath + " (" + binaryFile.length() + " bytes)")
 
-            // Ensure the binary is executable
             if (!binaryFile.canExecute()) {
                 binaryFile.setExecutable(true)
                 Log.i(TAG, "Set executable permission on binary")
             }
 
-            // Check if config needs setup
             val configNeedsSetup = !configFile.exists() ||
                 (configFile.exists() && !configFile.readText().contains("require_pairing = false"))
 
@@ -126,11 +124,10 @@ class ZeroClawService : Service() {
                 return
             }
 
-            // Start daemon normally
             startDaemonProcess(binaryFile, configDir)
 
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start native daemon: ${e.message}")
+            Log.e(TAG, "Failed to start native daemon: " + e.message)
             daemonProcess = null
         }
     }
@@ -138,13 +135,13 @@ class ZeroClawService : Service() {
     private fun findBinary(): File? {
         // 1. Try native lib dir (extracted from jniLibs by package manager)
         try {
-            val nativeLibFile = File(applicationInfo.nativeLibDir, "libzeroclaw.so")
+            val nativeLibFile = File(applicationInfo.nativeLibraryDir, "libzeroclaw.so")
             if (nativeLibFile.exists()) {
-                Log.i(TAG, "Found binary in nativeLibDir: ${nativeLibFile.absolutePath}")
+                Log.i(TAG, "Found binary in nativeLibDir: " + nativeLibFile.absolutePath)
                 return nativeLibFile
             }
         } catch (e: Exception) {
-            Log.w(TAG, "nativeLibDir not accessible: ${e.message}")
+            Log.w(TAG, "nativeLibraryDir not accessible: " + e.message)
         }
 
         // 2. Try filesDir copy
@@ -156,14 +153,10 @@ class ZeroClawService : Service() {
 
         // 3. Try extracting from nativeLibDir to filesDir
         try {
-            val nativeLibFile = File(applicationInfo.nativeLibDir, "libzeroclaw.so")
+            val nativeLibFile = File(applicationInfo.nativeLibraryDir, "libzeroclaw.so")
             if (nativeLibFile.exists()) {
                 Log.i(TAG, "Copying binary from nativeLibDir to filesDir")
-                nativeLibFile.inputStream().use { input ->
-                    filesBinary.outputStream().use { output ->
-                        input.copyTo(output)
-                    }
-                }
+                copyFile(nativeLibFile, filesBinary)
                 filesBinary.setExecutable(true)
                 if (filesBinary.canExecute()) {
                     Log.i(TAG, "Binary copied and made executable")
@@ -171,28 +164,42 @@ class ZeroClawService : Service() {
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to copy from nativeLibDir: ${e.message}")
+            Log.w(TAG, "Failed to copy from nativeLibDir: " + e.message)
         }
 
         // 4. Try extracting from assets
         try {
             Log.i(TAG, "Trying to extract binary from assets")
-            assets.open("zeroclaw").use { input ->
-                filesBinary.outputStream().use { output ->
-                    input.copyTo(output)
-                }
-            }
+            val ais = assets.open("zeroclaw")
+            copyStream(ais, FileOutputStream(filesBinary))
+            ais.close()
             filesBinary.setExecutable(true)
             if (filesBinary.canExecute()) {
                 Log.i(TAG, "Binary extracted from assets")
                 return filesBinary
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to extract from assets: ${e.message}")
+            Log.w(TAG, "Failed to extract from assets: " + e.message)
         }
 
         Log.e(TAG, "Could not find or extract the zeroclaw binary")
         return null
+    }
+
+    private fun copyFile(src: File, dst: File) {
+        FileInputStream(src).use { input ->
+            FileOutputStream(dst).use { output ->
+                input.copyTo(output)
+            }
+        }
+    }
+
+    private fun copyStream(input: InputStream, output: OutputStream) {
+        input.use { i ->
+            output.use { o ->
+                i.copyTo(o)
+            }
+        }
     }
 
     /**
@@ -236,7 +243,7 @@ class ZeroClawService : Service() {
                     createMinimalConfig(configFile)
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "First launch setup failed: ${e.message}")
+                Log.e(TAG, "First launch setup failed: " + e.message)
             }
 
             startDaemonProcess(binaryFile, configDir)
@@ -259,11 +266,11 @@ class ZeroClawService : Service() {
             val code = savedCode ?: pairCodeRef.get()
             if (code != null) {
                 try { autoPair(code) } catch (e: Exception) {
-                    Log.w(TAG, "Auto-pair failed: ${e.message}")
+                    Log.w(TAG, "Auto-pair failed: " + e.message)
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start daemon: ${e.message}")
+            Log.e(TAG, "Failed to start daemon: " + e.message)
         }
     }
 
@@ -285,14 +292,14 @@ class ZeroClawService : Service() {
                 "HOME" to filesDir.absolutePath
             )
 
-            Log.i(TAG, "Starting: ${cmd.joinToString(" ")}")
+            Log.i(TAG, "Starting: " + cmd.joinToString(" "))
             val pb = ProcessBuilder(cmd)
                 .directory(filesDir)
                 .redirectErrorStream(true)
             env.forEach { (k, v) -> pb.environment()[k] = v }
 
             val proc = pb.start()
-            Log.i(TAG, "Daemon started (pid: ${proc.pid()})")
+            Log.i(TAG, "Daemon started")
 
             Thread {
                 try {
@@ -308,13 +315,13 @@ class ZeroClawService : Service() {
 
             proc
         } catch (e: Exception) {
-            Log.e(TAG, "startProcess failed: ${e.message}")
+            Log.e(TAG, "startProcess failed: " + e.message)
             null
         }
     }
 
     private fun autoPair(code: String) {
-        val url = URL("http://127.0.0.1:$DAEMON_PORT/pair")
+        val url = URL("http://127.0.0.1:" + DAEMON_PORT + "/pair")
         val conn = url.openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
         conn.setRequestProperty("X-Pairing-Code", code)
@@ -336,7 +343,7 @@ class ZeroClawService : Service() {
     }
 
     private fun createMinimalConfig(configFile: File) {
-        configFile.writeText("""
+        val cfg = """
 default_provider = "openrouter"
 default_model = "gpt-4o"
 default_temperature = 0.7
@@ -355,10 +362,11 @@ backend = "sqlite"
 auto_save = true
 
 [gateway]
-port = $DAEMON_PORT
+port = """ + DAEMON_PORT + """
 host = "127.0.0.1"
 require_pairing = false
-""".trimIndent())
+""".trimIndent()
+        configFile.writeText(cfg)
         Log.i(TAG, "Created minimal config")
     }
 
