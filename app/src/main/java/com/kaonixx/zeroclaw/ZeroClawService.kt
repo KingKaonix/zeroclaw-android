@@ -6,59 +6,58 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import java.io.*
-import java.net.ServerSocket
-import java.net.Socket
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
+import java.net.HttpURLConnection
+import java.net.URL
 
-/** Pure embedded gateway with foreground service to prevent Android from killing it. */
+/** Manages the native zeroclaw daemon as a foreground service. */
 class ZeroClawService : Service() {
-    private var gateway: GatewayServer? = null
-    private val startTime = AtomicLong(System.currentTimeMillis())
+
+    private var daemonProcess: Process? = null
+    private val executor = Executors.newSingleThreadExecutor()
+    internal var pairingCode: String? = null
+        private set
+    internal var authToken: String? = null
+        private set
 
     companion object {
         const val TAG = "SimonAI"
         const val NOTIFICATION_ID = 1
         const val CHANNEL_ID = "simonai_service"
         const val ACTION_STOP = "com.kaonixx.zeroclaw.STOP_SERVICE"
+        const val DAEMON_PORT = 18789
+        val pairingCodeRegex = Regex("""│\s*(\d{6})\s*│""")
     }
 
     override fun onCreate() {
         super.onCreate()
-        createChannel()
+        createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
+            stopDaemon()
             stopSelf()
             return START_NOT_STICKY
         }
 
-        // Try to become a foreground service so Android doesn't kill us
         try {
-            val notification = buildNotification()
-            startForeground(NOTIFICATION_ID, notification)
+            startForeground(NOTIFICATION_ID, buildNotification())
             Log.i(TAG, "Foreground service started")
         } catch (e: Exception) {
-            // Permission not granted or Android 14+ restriction – run as regular service.
-            // The gateway will still work while the app is in the foreground.
             Log.w(TAG, "Foreground failed (${e.message}), running as regular service")
         }
 
-        try {
-            if (gateway == null) {
-                gateway = GatewayServer(18789, startTime)
-                gateway?.start()
-                Log.i(TAG, "Gateway on :18789")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Gateway failed: ${e.message}")
+        if (daemonProcess == null) {
+            executor.execute { startDaemon() }
         }
+
         return START_STICKY
     }
 
-    private fun createChannel() {
+    private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val c = NotificationChannel(
                 CHANNEL_ID,
@@ -89,7 +88,7 @@ class ZeroClawService : Service() {
             Notification.Builder(this)
         }
         return b.setContentTitle("SimonAI")
-            .setContentText("Gateway active on :18789")
+            .setContentText("Daemon active on :$DAEMON_PORT")
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(openAppIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopIntent)
@@ -97,100 +96,287 @@ class ZeroClawService : Service() {
             .build()
     }
 
+    /**
+     * Find the zeroclaw binary, prepare the config, and start the daemon.
+     */
+    private fun startDaemon() {
+        try {
+            val configDir = File(filesDir, ".zeroclaw")
+            configDir.mkdirs()
+            val configFile = File(configDir, "config.toml")
+
+            val binaryFile = findBinary() ?: run {
+                Log.e(TAG, "No binary found, daemon won't start")
+                return
+            }
+            Log.i(TAG, "Using binary: ${binaryFile.absolutePath} (${binaryFile.length()} bytes)")
+
+            // Ensure the binary is executable
+            if (!binaryFile.canExecute()) {
+                binaryFile.setExecutable(true)
+                Log.i(TAG, "Set executable permission on binary")
+            }
+
+            // Check if config needs setup
+            val configNeedsSetup = !configFile.exists() ||
+                (configFile.exists() && !configFile.readText().contains("require_pairing = false"))
+
+            if (configNeedsSetup) {
+                firstLaunchSetup(binaryFile, configDir, configFile)
+                return
+            }
+
+            // Start daemon normally
+            startDaemonProcess(binaryFile, configDir)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start native daemon: ${e.message}")
+            daemonProcess = null
+        }
+    }
+
+    private fun findBinary(): File? {
+        // 1. Try native lib dir (extracted from jniLibs by package manager)
+        try {
+            val nativeLibFile = File(applicationInfo.nativeLibDir, "libzeroclaw.so")
+            if (nativeLibFile.exists()) {
+                Log.i(TAG, "Found binary in nativeLibDir: ${nativeLibFile.absolutePath}")
+                return nativeLibFile
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "nativeLibDir not accessible: ${e.message}")
+        }
+
+        // 2. Try filesDir copy
+        val filesBinary = File(filesDir, "zeroclaw")
+        if (filesBinary.exists()) {
+            Log.i(TAG, "Found binary in filesDir")
+            return filesBinary
+        }
+
+        // 3. Try extracting from nativeLibDir to filesDir
+        try {
+            val nativeLibFile = File(applicationInfo.nativeLibDir, "libzeroclaw.so")
+            if (nativeLibFile.exists()) {
+                Log.i(TAG, "Copying binary from nativeLibDir to filesDir")
+                nativeLibFile.inputStream().use { input ->
+                    filesBinary.outputStream().use { output ->
+                        input.copyTo(output)
+                    }
+                }
+                filesBinary.setExecutable(true)
+                if (filesBinary.canExecute()) {
+                    Log.i(TAG, "Binary copied and made executable")
+                    return filesBinary
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to copy from nativeLibDir: ${e.message}")
+        }
+
+        // 4. Try extracting from assets
+        try {
+            Log.i(TAG, "Trying to extract binary from assets")
+            assets.open("zeroclaw").use { input ->
+                filesBinary.outputStream().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            filesBinary.setExecutable(true)
+            if (filesBinary.canExecute()) {
+                Log.i(TAG, "Binary extracted from assets")
+                return filesBinary
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to extract from assets: ${e.message}")
+        }
+
+        Log.e(TAG, "Could not find or extract the zeroclaw binary")
+        return null
+    }
+
+    /**
+     * First launch: generate daemon config, modify it, then start for real.
+     */
+    private fun firstLaunchSetup(
+        binaryFile: File,
+        configDir: File,
+        configFile: File
+    ) {
+        executor.execute {
+            try {
+                Log.i(TAG, "First launch: generating config...")
+                val pairCodeRef = AtomicReference<String?>(null)
+                val proc = startProcess(binaryFile, configDir, pairCodeRef)
+                if (proc == null) {
+                    Log.e(TAG, "Failed to start daemon for config generation")
+                    return@execute
+                }
+
+                Thread.sleep(3000)
+                proc.destroyForcibly()
+
+                if (configFile.exists()) {
+                    Log.i(TAG, "Config generated, modifying to disable pairing")
+                    var configText = configFile.readText()
+                    configText = configText.replace(
+                        "require_pairing = true",
+                        "require_pairing = false"
+                    )
+                    if (!configText.contains("require_pairing = false")) {
+                        configText = configText.replace(
+                            "[gateway]",
+                            "[gateway]\nrequire_pairing = false"
+                        )
+                    }
+                    configFile.writeText(configText)
+                    Log.i(TAG, "Config modified: require_pairing=false")
+                } else {
+                    Log.w(TAG, "Config not generated, creating minimal config")
+                    createMinimalConfig(configFile)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "First launch setup failed: ${e.message}")
+            }
+
+            startDaemonProcess(binaryFile, configDir)
+        }
+    }
+
+    private fun startDaemonProcess(binaryFile: File, configDir: File) {
+        try {
+            val pairCodeRef = AtomicReference<String?>(null)
+            val proc = startProcess(binaryFile, configDir, pairCodeRef)
+            if (proc == null) {
+                Log.e(TAG, "Failed to start daemon")
+                return
+            }
+            daemonProcess = proc
+
+            // Try auto-pair
+            Thread.sleep(2000)
+            val savedCode = try { File(filesDir, ".pairing_code").readText() } catch (_: Exception) { null }
+            val code = savedCode ?: pairCodeRef.get()
+            if (code != null) {
+                try { autoPair(code) } catch (e: Exception) {
+                    Log.w(TAG, "Auto-pair failed: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start daemon: ${e.message}")
+        }
+    }
+
+    private fun startProcess(
+        binaryFile: File,
+        configDir: File,
+        pairCodeRef: AtomicReference<String?>
+    ): Process? {
+        return try {
+            val cmd = listOf(
+                binaryFile.absolutePath,
+                "--config-dir", configDir.absolutePath,
+                "daemon",
+                "-p", DAEMON_PORT.toString()
+            )
+            val env = mapOf(
+                "RUST_LOG" to "info",
+                "RUST_BACKTRACE" to "1",
+                "HOME" to filesDir.absolutePath
+            )
+
+            Log.i(TAG, "Starting: ${cmd.joinToString(" ")}")
+            val pb = ProcessBuilder(cmd)
+                .directory(filesDir)
+                .redirectErrorStream(true)
+            env.forEach { (k, v) -> pb.environment()[k] = v }
+
+            val proc = pb.start()
+            Log.i(TAG, "Daemon started (pid: ${proc.pid()})")
+
+            Thread {
+                try {
+                    proc.inputStream.bufferedReader().use { reader ->
+                        reader.lines().forEach { line ->
+                            Log.i(TAG, "[daemon] $line")
+                            val m = pairingCodeRegex.find(line)
+                            if (m != null) pairCodeRef.set(m.groupValues[1])
+                        }
+                    }
+                } catch (_: IOException) { }
+            }.apply { isDaemon = true }.start()
+
+            proc
+        } catch (e: Exception) {
+            Log.e(TAG, "startProcess failed: ${e.message}")
+            null
+        }
+    }
+
+    private fun autoPair(code: String) {
+        val url = URL("http://127.0.0.1:$DAEMON_PORT/pair")
+        val conn = url.openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("X-Pairing-Code", code)
+        conn.connectTimeout = 5000
+        conn.readTimeout = 5000
+        try {
+            if (conn.responseCode == 200) {
+                val body = conn.inputStream.bufferedReader().readText()
+                val tokenMatch = Regex(""""token"\s*:\s*"([^"]+)"""").find(body)
+                if (tokenMatch != null) {
+                    authToken = tokenMatch.groupValues[1]
+                    File(filesDir, ".auth_token").writeText(authToken!!)
+                    Log.i(TAG, "Auto-pair successful")
+                }
+            }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun createMinimalConfig(configFile: File) {
+        configFile.writeText("""
+default_provider = "openrouter"
+default_model = "gpt-4o"
+default_temperature = 0.7
+
+[observability]
+backend = "none"
+
+[agent]
+compact_context = false
+max_tool_iterations = 10
+max_history_messages = 50
+parallel_tools = false
+
+[memory]
+backend = "sqlite"
+auto_save = true
+
+[gateway]
+port = $DAEMON_PORT
+host = "127.0.0.1"
+require_pairing = false
+""".trimIndent())
+        Log.i(TAG, "Created minimal config")
+    }
+
+    private fun stopDaemon() {
+        daemonProcess?.let { proc ->
+            if (proc.isAlive) {
+                proc.destroyForcibly()
+                Log.i(TAG, "Daemon killed")
+            }
+        }
+        daemonProcess = null
+    }
+
     override fun onDestroy() {
+        stopDaemon()
+        executor.shutdownNow()
         super.onDestroy()
-        gateway?.stop()
     }
 
     override fun onBind(intent: Intent?) = null
-}
-
-class GatewayServer(private val port: Int, private val startTime: AtomicLong) {
-    private var ss: ServerSocket? = null
-    @Volatile private var running = false
-    private val pool = Executors.newFixedThreadPool(4)
-
-    fun start() {
-        running = true
-        ss = ServerSocket(port, 10, java.net.InetAddress.getByName("127.0.0.1"))
-        Thread {
-            while (running) try {
-                val c = ss?.accept() ?: break
-                pool.execute { handle(c) }
-            } catch (_: Exception) {
-                if (!running) break
-            }
-        }.apply { name = "Gateway"; start() }
-    }
-
-    fun stop() {
-        running = false
-        try { ss?.close() } catch(_: Exception) {}
-        pool.shutdown()
-    }
-
-    private fun handle(s: Socket) {
-        try {
-            s.use { sock ->
-                val r = sock.getInputStream().bufferedReader()
-                val w = sock.getOutputStream()
-                val line = r.readLine() ?: return
-                val parts = line.split(" ")
-                if (parts.size < 2) return
-                val path = parts[1].split("?").first()
-                var cl = 0
-                while (true) {
-                    val h = r.readLine() ?: break
-                    if (h.isBlank()) break
-                    if (h.lowercase().startsWith("content-length:"))
-                        cl = h.substringAfter(":").trim().toIntOrNull() ?: 0
-                }
-                val body = if (cl > 0) {
-                    val buf = CharArray(cl)
-                    r.read(buf, 0, cl)
-                    String(buf)
-                } else ""
-
-                val uptime = (System.currentTimeMillis() - startTime.get()) / 1000
-
-                val resp = when {
-                    path == "/api/status" || path == "/api/health" -> """{
-                        "version":"1.0.0","gateway_port":18789,"uptime_seconds":$uptime,"paired":false,
-                        "daemon_started_at":"${java.time.Instant.now()}",
-                        "health":{"pid":${android.os.Process.myPid()},"uptime_seconds":$uptime,"components":{"gateway":{"status":"ok"}}},
-                        "process":{"rss_bytes":0,"system_ram_total_bytes":0},"channels":{}
-                    }""".replace("\\s+".toRegex(), " ")
-
-                    path == "/api/quickstart/state" -> """{"quickstart_completed":false,"agents":[]}"""
-                    path == "/api/quickstart/fields" -> """[{"key":"model_provider","label":"AI Provider","type":"select","required":true,"options":[{"value":"manual","label":"Manual Setup"}]},{"key":"api_key","label":"API Key","type":"password","required":false}]"""
-                    path == "/api/agents" -> """[{"alias":"default","name":"Default Agent","status":"idle"}]"""
-                    path.startsWith("/api/agent/") && parts[0] == "POST" && path.endsWith("/chat") -> """{"role":"assistant","content":"Gateway active. Configure an API key in Settings to enable chat."}"""
-                    path.startsWith("/api/agent/") -> {
-                        val a = path.removePrefix("/api/agent/").split("/").first()
-                        """{"alias":"$a","status":"idle"}"""
-                    }
-                    path == "/api/tools" -> "[]"
-                    path == "/api/config" -> """[{"name":"gateway","label":"Gateway","sections":[{"name":"gateway","keys":[{"key":"port","value":18789,"type":"integer"}]}]}]"""
-                    path.startsWith("/api/config/") -> """{"name":"","keys":[]}"""
-                    path == "/api/logs" -> "[]"
-                    path == "/api/cron" -> "[]"
-                    path == "/api/integrations" -> """[{"platform":"embedded","enabled":true,"status":"active","label":"Embedded Gateway"}]"""
-                    path == "/api/doctor" -> """[{"id":"gateway","title":"Gateway","status":"pass","message":"Running"}]"""
-                    path == "/api/admin/reload" -> """{"success":true}"""
-                    path == "/api/admin/pair/code" -> """{"pairing_code":"000000"}"""
-                    path == "/api/admin/pair" && parts[0] == "POST" -> {
-                        val code = """"code"\s*:\s*"([^"]+)"""".toRegex().find(body)?.groupValues?.getOrNull(1) ?: ""
-                        if (code.isNotBlank()) """{"token":"embedded-token","success":true}""" else """{"success":false,"error":"No code"}"""
-                    }
-                    path == "/api/quickstart/apply" -> """{"success":true}"""
-                    path == "/api/quickstart/dismiss" -> """{"success":true}"""
-                    else -> "HTTP/1.1 404\r\nContent-Length: 0\r\n\r\n"
-                }
-
-                val out = if (resp.startsWith("HTTP/1.1")) resp
-                else "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n$resp"
-                w.write(out.toByteArray()); w.flush()
-            }
-        } catch (_: Exception) {}
-    }
 }

@@ -29,3 +29,5 @@ native/
 target/
 /zeroclaw/
 .codex-agent/
+*.apk
+*.zip
