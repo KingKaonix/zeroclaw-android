@@ -34,21 +34,27 @@ class ZeroClawService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        // Foreground service required on API 26+ to prevent immediate kill
+
+        // Try to become a foreground service so Android doesn't kill us
         try {
             val notification = buildNotification()
             startForeground(NOTIFICATION_ID, notification)
             Log.i(TAG, "Foreground service started")
         } catch (e: Exception) {
-            Log.w(TAG, "Foreground notification failed: ${e.message}")
+            // Permission not granted or Android 14+ restriction – run as regular service.
+            // The gateway will still work while the app is in the foreground.
+            Log.w(TAG, "Foreground failed (${e.message}), running as regular service")
         }
+
         try {
             if (gateway == null) {
                 gateway = GatewayServer(18789, startTime)
                 gateway?.start()
                 Log.i(TAG, "Gateway on :18789")
             }
-        } catch (e: Exception) { Log.e(TAG, "Gateway failed: ${e.message}") }
+        } catch (e: Exception) {
+            Log.e(TAG, "Gateway failed: ${e.message}")
+        }
         return START_STICKY
     }
 
@@ -66,6 +72,16 @@ class ZeroClawService : Service() {
     }
 
     private fun buildNotification(): Notification {
+        val openAppIntent = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val stopIntent = PendingIntent.getService(
+            this, 1,
+            Intent(this, ZeroClawService::class.java).apply { action = ACTION_STOP },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
         val b = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
         } else {
@@ -75,11 +91,17 @@ class ZeroClawService : Service() {
         return b.setContentTitle("SimonAI")
             .setContentText("Gateway active on :18789")
             .setSmallIcon(R.drawable.ic_notification)
+            .setContentIntent(openAppIntent)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopIntent)
             .setOngoing(true)
             .build()
     }
 
-    override fun onDestroy() { super.onDestroy(); gateway?.stop() }
+    override fun onDestroy() {
+        super.onDestroy()
+        gateway?.stop()
+    }
+
     override fun onBind(intent: Intent?) = null
 }
 
@@ -92,12 +114,20 @@ class GatewayServer(private val port: Int, private val startTime: AtomicLong) {
         running = true
         ss = ServerSocket(port, 10, java.net.InetAddress.getByName("127.0.0.1"))
         Thread {
-            while (running) try { val c = ss?.accept() ?: break; pool.execute { handle(c) } }
-            catch (_: Exception) { if (!running) break }
+            while (running) try {
+                val c = ss?.accept() ?: break
+                pool.execute { handle(c) }
+            } catch (_: Exception) {
+                if (!running) break
+            }
         }.apply { name = "Gateway"; start() }
     }
 
-    fun stop() { running = false; try { ss?.close() } catch(_: Exception) {}; pool.shutdown() }
+    fun stop() {
+        running = false
+        try { ss?.close() } catch(_: Exception) {}
+        pool.shutdown()
+    }
 
     private fun handle(s: Socket) {
         try {

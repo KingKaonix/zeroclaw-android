@@ -45,8 +45,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        requestNotificationPermission()
-        ContextCompat.startForegroundService(this, Intent(this, ZeroClawService::class.java))
+        startZeroClawService()
 
         setContent {
             ZeroClawTheme {
@@ -56,7 +55,6 @@ class MainActivity : AppCompatActivity() {
                 var progress by remember { mutableStateOf(DaemonStartProgress()) }
                 val scope = rememberCoroutineScope()
 
-                // Poll for daemon with progress tracking
                 LaunchedEffect(retryTrigger) {
                     appState = AppUiState.StartingDaemon
                     progress = DaemonStartProgress(
@@ -64,8 +62,6 @@ class MainActivity : AppCompatActivity() {
                         message = "Preparing agent binary...",
                         progress = 0.1f
                     )
-
-                    // Simulate startup steps
                     delay(800)
                     progress = DaemonStartProgress(
                         step = DaemonStartStep.StartingDaemon,
@@ -89,7 +85,6 @@ class MainActivity : AppCompatActivity() {
                         )
                         delay(300)
 
-                        // Check if onboarding is needed
                         try {
                             val qs = ApiClient.getQuickstartState()
                             if (qs.quickstartCompleted) {
@@ -100,7 +95,6 @@ class MainActivity : AppCompatActivity() {
                                 appState = AppUiState.Onboarding
                             }
                         } catch (_: Exception) {
-                            // Can't determine quickstart state — go to main app
                             try {
                                 val status = ApiClient.getStatus()
                                 isPaired = status.paired
@@ -125,7 +119,6 @@ class MainActivity : AppCompatActivity() {
                     )
                     AppUiState.Onboarding -> OnboardingScreen(
                         onComplete = {
-                            // After onboarding, reload daemon and go to app
                             scope.launch {
                                 try {
                                     ApiClient.reloadDaemon()
@@ -155,16 +148,38 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun requestNotificationPermission() {
+    private fun startZeroClawService() {
+        val intent = Intent(this, ZeroClawService::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED
+                == PackageManager.PERMISSION_GRANTED
             ) {
+                ContextCompat.startForegroundService(this, intent)
+            } else {
                 ActivityCompat.requestPermissions(
                     this,
                     arrayOf(Manifest.permission.POST_NOTIFICATIONS),
                     NOTIF_PERM_CODE
                 )
+                @Suppress("DEPRECATION")
+                startService(intent)
+            }
+        } else {
+            ContextCompat.startForegroundService(this, intent)
+        }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == NOTIF_PERM_CODE) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                val intent = Intent(this, ZeroClawService::class.java)
+                stopService(intent)
+                ContextCompat.startForegroundService(this, intent)
             }
         }
     }
@@ -198,7 +213,6 @@ class MainActivity : AppCompatActivity() {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier.padding(32.dp)
             ) {
-                // Logo
                 Surface(
                     modifier = Modifier.size(96.dp),
                     shape = RoundedCornerShape(24.dp),
@@ -233,7 +247,6 @@ class MainActivity : AppCompatActivity() {
 
                 Spacer(Modifier.height(24.dp))
 
-                // Progress bar
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -255,7 +268,6 @@ class MainActivity : AppCompatActivity() {
 
                 Spacer(Modifier.height(8.dp))
 
-                // Percentage + step label
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
